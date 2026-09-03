@@ -3,11 +3,29 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Plugin pour rediriger /patteuf-react vers /patteuf-react/
+function trailingSlashRedirect() {
+  return {
+    name: 'trailing-slash-redirect',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url === '/patteuf-react') {
+          res.writeHead(301, { Location: '/patteuf-react/' })
+          res.end()
+          return
+        }
+        next()
+      })
+    }
+  }
+}
+
 export default defineConfig({
   base: '/patteuf-react/',
   plugins: [
     react(),
     tailwindcss(),
+    trailingSlashRedirect(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons/*.svg'],

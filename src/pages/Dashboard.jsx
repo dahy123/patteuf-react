@@ -54,9 +54,6 @@ export default function Dashboard() {
           <h1 className="text-xl font-bold text-slate-800">Tableau de bord</h1>
           <p className="text-slate-500 text-sm mt-0.5">Vue d'ensemble de votre activité</p>
         </div>
-        <div className="w-10 h-10 rounded-full bg-brand-50 flex items-center justify-center shadow-sm shadow-brand-100">
-          <span className="text-lg">🐾</span>
-        </div>
       </div>
 
       {/* Stats Grid */}

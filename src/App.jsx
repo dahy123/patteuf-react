@@ -10,7 +10,7 @@ import Marketing from './pages/Marketing'
 export default function App() {
   return (
     <AppProvider>
-      <BrowserRouter>
+      <BrowserRouter basename="/patteuf-react">
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
           <Header />
           <main className="max-w-2xl mx-auto pb-8">
