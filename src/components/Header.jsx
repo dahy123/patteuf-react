@@ -1,12 +1,13 @@
 import { NavLink } from 'react-router-dom'
 import {
-  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone,
+  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, Users,
 } from 'lucide-react'
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/stock', label: 'Stock', icon: Package },
   { to: '/vente', label: 'Vente', icon: ShoppingCart },
+  { to: '/clients', label: 'Clients', icon: Users },
   { to: '/cagnotte', label: 'Cagnotte', icon: Wallet },
   { to: '/marketing', label: 'Marketing', icon: Megaphone },
 ]

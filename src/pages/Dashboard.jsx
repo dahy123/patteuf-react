@@ -2,11 +2,11 @@ import { useApp } from '../context/AppContext'
 import { formatAr } from '../utils/helpers'
 import {
   Package, ShoppingCart, TrendingUp, Gift,
-  AlertTriangle, Users, ArrowRight, Clock, Wallet, Tag,
+  AlertTriangle, Users, ArrowRight, Clock, Wallet, Tag, UserCheck,
 } from 'lucide-react'
 
 export default function Dashboard() {
-  const { getStats, sales, getProductsWithStock, cagnottes } = useApp()
+  const { getStats, sales, getProductsWithStock, cagnottes, clients } = useApp()
   const stats = getStats()
   const products = getProductsWithStock()
 
@@ -36,17 +36,18 @@ export default function Dashboard() {
       valueColor: 'text-violet-700',
     },
     {
-      label: 'Cashback',
-      value: formatAr(stats.totalCashback),
-      icon: Gift,
-      bg: 'bg-amber-50',
-      iconColor: 'text-amber-600',
-      valueColor: 'text-amber-700',
+      label: 'Clients',
+      value: stats.totalClients,
+      icon: Users,
+      bg: 'bg-brand-50',
+      iconColor: 'text-brand-600',
+      valueColor: 'text-brand-700',
     },
   ]
 
   const recentSales = sales.slice(0, 5)
   const topCagnottes = [...cagnottes].sort((a, b) => b.balance - a.balance).slice(0, 5)
+  const topClients = [...clients].sort((a, b) => b.totalSpent - a.totalSpent).slice(0, 5)
 
   return (
     <div className="p-4 space-y-5 animate-fade-in">
@@ -174,6 +175,39 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Top Clients */}
+      {topClients.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-brand-500" />
+              <h3 className="text-sm font-semibold text-slate-700">Meilleurs clients</h3>
+            </div>
+            <a href="/clients" className="text-xs text-brand-600 font-medium no-underline flex items-center gap-1 hover:text-brand-700 transition-colors">
+              Voir tout <ArrowRight className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="space-y-0">
+            {topClients.map((client, idx) => (
+              <div key={client.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">{client.name}</p>
+                    <p className="text-[11px] text-slate-400">{client.totalPurchases} achat{client.totalPurchases > 1 ? 's' : ''}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-brand-700 tabular-nums">{formatAr(client.totalSpent)}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Top Cagnottes */}
       {topCagnottes.length > 0 && (

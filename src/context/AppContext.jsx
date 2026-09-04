@@ -26,10 +26,59 @@ export function AppProvider({ children }) {
   const [stock, setStock] = useState(() => saved?.stock || loadInitialStock())
   const [sales, setSales] = useState(() => saved?.sales || [])
   const [cagnottes, setCagnottes] = useState(() => saved?.cagnottes || [])
+  const [clients, setClients] = useState(() => saved?.clients || [])
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ stock, sales, cagnottes }))
-  }, [stock, sales, cagnottes])
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ stock, sales, cagnottes, clients }))
+  }, [stock, sales, cagnottes, clients])
+
+  // ── Clients CRUD ──
+  const addClient = useCallback(({ name, phone, address }) => {
+    const client = {
+      id: generateId(),
+      name: name.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      createdAt: new Date().toISOString(),
+      totalPurchases: 0,
+      totalSpent: 0,
+    }
+    setClients(prev => [client, ...prev])
+    return client
+  }, [])
+
+  const updateClient = useCallback((clientId, updates) => {
+    setClients(prev => prev.map(c =>
+      c.id === clientId ? { ...c, ...updates } : c
+    ))
+  }, [])
+
+  const removeClient = useCallback((clientId) => {
+    setClients(prev => prev.filter(c => c.id !== clientId))
+  }, [])
+
+  const getClient = useCallback((clientId) => {
+    return clients.find(c => c.id === clientId) || null
+  }, [clients])
+
+  const searchClients = useCallback((query) => {
+    const q = query.toLowerCase().trim()
+    if (!q) return clients
+    return clients.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.phone.includes(q) ||
+      c.address.toLowerCase().includes(q)
+    )
+  }, [clients])
+
+  // Update client purchase stats
+  const updateClientStats = useCallback((clientId, saleTotal) => {
+    setClients(prev => prev.map(c =>
+      c.id === clientId
+        ? { ...c, totalPurchases: c.totalPurchases + 1, totalSpent: c.totalSpent + saleTotal }
+        : c
+    ))
+  }, [])
 
   // Get product by ID
   const getProduct = useCallback((id) => {
@@ -53,7 +102,7 @@ export function AppProvider({ children }) {
   }, [])
 
   // Process a sale
-  const processSale = useCallback(({ items, buyerName, buyerPhone, parrainRefCode }) => {
+  const processSale = useCallback(({ items, buyerName, buyerPhone, parrainRefCode, clientId }) => {
     const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
 
     // Determine cashback: only packs generate cashback
@@ -76,6 +125,7 @@ export function AppProvider({ children }) {
       total,
       buyerName: buyerName || 'Anonyme',
       buyerPhone: buyerPhone || '',
+      clientId: clientId || '',
       refCode: generateId().toUpperCase().slice(0, 8),
       cashback: totalCashback,
       hasPack,
@@ -93,6 +143,15 @@ export function AppProvider({ children }) {
 
     // Add sale to history
     setSales(prev => [sale, ...prev])
+
+    // Update client stats if linked
+    if (clientId) {
+      setClients(prev => prev.map(c =>
+        c.id === clientId
+          ? { ...c, totalPurchases: c.totalPurchases + 1, totalSpent: c.totalSpent + total }
+          : c
+      ))
+    }
 
     // Update cagnottes (only for packs)
     if (hasPack) {
@@ -174,18 +233,30 @@ export function AppProvider({ children }) {
       totalCashback: totalCashbackDistributed,
       lowStockProducts,
       totalCagnottes: cagnottes.length,
+      totalClients: clients.length,
     }
-  }, [stock, sales, cagnottes])
+  }, [stock, sales, cagnottes, clients])
 
   const value = {
     products: initialProducts,
     stock,
     sales,
     cagnottes,
+    clients,
+    // Client CRUD
+    addClient,
+    updateClient,
+    removeClient,
+    getClient,
+    searchClients,
+    updateClientStats,
+    // Products & Stock
     getProduct,
     getProductsWithStock,
     updateStock,
+    // Sales
     processSale,
+    // Stats
     getStats,
   }
 

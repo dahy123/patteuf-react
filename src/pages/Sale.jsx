@@ -3,9 +3,9 @@ import { useApp } from '../context/AppContext'
 import { formatAr } from '../utils/helpers'
 import { PARRAIN_CASHBACK } from '../data/products'
 import {
-  Plus, Minus, X, Check, User, Phone,
+  Plus, Minus, X, Check, User, Phone, MapPin,
   Gift, ChevronDown, ChevronUp, History, Sparkles, Tag, PartyPopper,
-  Package, Egg, Drumstick,
+  Package, Egg, Drumstick, Search, UserPlus,
 } from 'lucide-react'
 
 const productIcons = {
@@ -17,15 +17,27 @@ const productIcons = {
 }
 
 export default function Sale() {
-  const { getProductsWithStock, processSale, sales } = useApp()
+  const { getProductsWithStock, processSale, sales, clients, addClient, searchClients } = useApp()
   const products = getProductsWithStock()
   const [items, setItems] = useState([])
-  const [buyerName, setBuyerName] = useState('')
-  const [buyerPhone, setBuyerPhone] = useState('')
   const [parrainRefCode, setParrainRefCode] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
   const [lastSale, setLastSale] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
+
+  // Client selection state
+  const [selectedClientId, setSelectedClientId] = useState('')
+  const [clientSearchQuery, setClientSearchQuery] = useState('')
+  const [showClientDropdown, setShowClientDropdown] = useState(false)
+  const [showQuickCreate, setShowQuickCreate] = useState(false)
+  const [quickClient, setQuickClient] = useState({ name: '', phone: '', address: '' })
+
+  const filteredClients = clientSearchQuery ? searchClients(clientSearchQuery) : clients
+  const selectedClient = clients.find(c => c.id === selectedClientId) || null
+
+  // Auto-fill buyer info from selected client
+  const buyerName = selectedClient?.name || quickClient.name || ''
+  const buyerPhone = selectedClient?.phone || quickClient.phone || ''
 
   const addItem = (product) => {
     if (product.currentStock <= 0) return
@@ -54,12 +66,31 @@ export default function Sale() {
   const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
   const totalItems = items.reduce((sum, item) => sum + item.qty, 0)
 
-  // Only show cashback info if there's at least one pack in cart
   const cartHasPack = items.some(i => i.type === 'pack')
   const totalCashback = items.reduce((sum, i) => {
     const prod = products.find(p => p.id === i.id)
     return sum + (prod?.cashback || 0) * i.qty
   }, 0)
+
+  const handleQuickCreate = () => {
+    if (!quickClient.name.trim()) return
+    const newClient = addClient(quickClient)
+    setSelectedClientId(newClient.id)
+    setQuickClient({ name: '', phone: '', address: '' })
+    setShowQuickCreate(false)
+    setShowClientDropdown(false)
+  }
+
+  const handleSelectClient = (client) => {
+    setSelectedClientId(client.id)
+    setClientSearchQuery('')
+    setShowClientDropdown(false)
+  }
+
+  const handleClearClient = () => {
+    setSelectedClientId('')
+    setQuickClient({ name: '', phone: '', address: '' })
+  }
 
   const handleSale = () => {
     if (items.length === 0) return
@@ -68,12 +99,13 @@ export default function Sale() {
       buyerName: buyerName.trim(),
       buyerPhone: buyerPhone.trim(),
       parrainRefCode: parrainRefCode.trim().toUpperCase(),
+      clientId: selectedClientId || '',
     })
     setLastSale(sale)
     setShowSuccess(true)
     setItems([])
-    setBuyerName('')
-    setBuyerPhone('')
+    setSelectedClientId('')
+    setQuickClient({ name: '', phone: '', address: '' })
     setParrainRefCode('')
   }
 
@@ -107,6 +139,12 @@ export default function Sale() {
                 <span className="text-sm text-slate-500">Code réf.</span>
                 <span className="font-mono text-sm font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md">{lastSale.refCode}</span>
               </div>
+              {lastSale.clientId && (
+                <div className="flex items-center gap-2 text-brand-600">
+                  <User className="w-4 h-4" />
+                  <span className="text-xs font-medium">Client lié au profil</span>
+                </div>
+              )}
               {lastSale.hasPack && (
                 <div className="border-t border-slate-200 pt-3 space-y-1.5">
                   <div className="flex items-center gap-2 text-emerald-600">
@@ -243,20 +281,142 @@ export default function Sale() {
         </div>
       )}
 
-      {/* Buyer Info */}
+      {/* Client Selection */}
       <div className="card p-4 space-y-3">
-        <div className="flex items-center gap-2">
-          <User className="w-4 h-4 text-slate-400" />
-          <h3 className="text-sm font-semibold text-slate-700">Informations acheteur</h3>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <User className="w-4 h-4 text-slate-400" />
+            <h3 className="text-sm font-semibold text-slate-700">Client</h3>
+          </div>
+          {!selectedClientId && (
+            <button onClick={() => setShowQuickCreate(!showQuickCreate)} className="text-xs text-brand-600 font-medium flex items-center gap-1 hover:text-brand-700">
+              <UserPlus className="w-3.5 h-3.5" /> Nouveau
+            </button>
+          )}
         </div>
-        <div className="relative">
-          <User className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input type="text" placeholder="Nom de l'acheteur" value={buyerName} onChange={e => setBuyerName(e.target.value)} className="input pl-10" />
-        </div>
-        <div className="relative">
-          <Phone className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input type="tel" placeholder="Numéro de téléphone" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} className="input pl-10" />
-        </div>
+
+        {/* Selected client display */}
+        {selectedClient ? (
+          <div className="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-xl p-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 bg-brand-100 rounded-xl flex items-center justify-center">
+                <User className="w-4 h-4 text-brand-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-brand-800">{selectedClient.name}</p>
+                <div className="flex items-center gap-2 text-xs text-brand-600">
+                  {selectedClient.phone && <span>{selectedClient.phone}</span>}
+                  {selectedClient.address && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{selectedClient.address}</span>}
+                </div>
+              </div>
+            </div>
+            <button onClick={handleClearClient} className="p-1.5 rounded-lg hover:bg-brand-100 text-brand-400 hover:text-brand-600 transition">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Search existing clients */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Rechercher un client existant..."
+                value={clientSearchQuery}
+                onChange={e => { setClientSearchQuery(e.target.value); setShowClientDropdown(true) }}
+                onFocus={() => setShowClientDropdown(true)}
+                className="input pl-10"
+              />
+            </div>
+
+            {/* Client dropdown */}
+            {showClientDropdown && clientSearchQuery && (
+              <div className="border border-slate-200 rounded-xl max-h-48 overflow-y-auto bg-white">
+                {filteredClients.length === 0 ? (
+                  <div className="p-3 text-center text-sm text-slate-400">
+                    Aucun client trouvé
+                  </div>
+                ) : (
+                  filteredClients.slice(0, 8).map(client => (
+                    <button
+                      key={client.id}
+                      onClick={() => handleSelectClient(client)}
+                      className="w-full flex items-center gap-3 p-3 hover:bg-slate-50 transition text-left border-b border-slate-100 last:border-0"
+                    >
+                      <div className="w-8 h-8 bg-slate-100 rounded-lg flex items-center justify-center">
+                        <User className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-700 truncate">{client.name}</p>
+                        <p className="text-[11px] text-slate-400">{client.phone || 'Pas de téléphone'}</p>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+
+            {/* Quick create form */}
+            {showQuickCreate && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 animate-scale-in">
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Nom du client *"
+                    value={quickClient.name}
+                    onChange={e => setQuickClient({ ...quickClient, name: e.target.value })}
+                    className="input pl-10 text-sm"
+                    autoFocus
+                  />
+                </div>
+                <div className="relative">
+                  <Phone className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="tel"
+                    placeholder="Téléphone"
+                    value={quickClient.phone}
+                    onChange={e => setQuickClient({ ...quickClient, phone: e.target.value })}
+                    className="input pl-10 text-sm"
+                  />
+                </div>
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Adresse"
+                    value={quickClient.address}
+                    onChange={e => setQuickClient({ ...quickClient, address: e.target.value })}
+                    className="input pl-10 text-sm"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={handleQuickCreate} disabled={!quickClient.name.trim()} className="btn btn-success flex-1 text-sm py-2">
+                    <Check className="w-3.5 h-3.5" /> Créer et sélectionner
+                  </button>
+                  <button onClick={() => { setShowQuickCreate(false); setQuickClient({ name: '', phone: '', address: '' }) }} className="btn btn-ghost text-sm py-2">Annuler</button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Manual entry fallback */}
+        {!selectedClientId && !showQuickCreate && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+            <p className="text-xs text-slate-400 italic">Ou saisissez manuellement :</p>
+            <div className="relative">
+              <User className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input type="text" placeholder="Nom de l'acheteur" value={quickClient.name} onChange={e => setQuickClient({ ...quickClient, name: e.target.value })} className="input pl-10 text-sm" />
+            </div>
+            <div className="relative">
+              <Phone className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input type="tel" placeholder="Numéro de téléphone" value={quickClient.phone} onChange={e => setQuickClient({ ...quickClient, phone: e.target.value })} className="input pl-10 text-sm" />
+            </div>
+          </div>
+        )}
+
+        {/* Parrain */}
         {cartHasPack && (
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3.5">
             <div className="flex items-center gap-2 mb-2">
@@ -289,6 +449,9 @@ export default function Sale() {
               <p className="text-xs text-slate-400">{totalItems} article{totalItems > 1 ? 's' : ''}</p>
               {cartHasPack && (
                 <p className="text-xs text-emerald-500 font-medium">+{formatAr(totalCashback)} cashback</p>
+              )}
+              {selectedClient && (
+                <p className="text-[10px] text-brand-500 font-medium mt-0.5">Client: {selectedClient.name}</p>
               )}
             </div>
           </div>

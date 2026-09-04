@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Stock from './pages/Stock'
 import Sale from './pages/Sale'
 import Cagnotte from './pages/Cagnotte'
+import Clients from './pages/Clients'
 import Marketing from './pages/Marketing'
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/stock" element={<Stock />} />
               <Route path="/vente" element={<Sale />} />
+              <Route path="/clients" element={<Clients />} />
               <Route path="/cagnotte" element={<Cagnotte />} />
               <Route path="/marketing" element={<Marketing />} />
             </Routes>
