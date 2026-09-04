@@ -7,9 +7,8 @@ export const formatAr = (amount) => {
   }).format(amount) + ' Ar'
 }
 
-export const PACK_PRICE = 3000
-export const CASHBACK_AMOUNT = 200
-export const PARRAIN_CASHBACK = 200
+// Re-export constants from products
+export { CASHBACK_AMOUNT, PARRAIN_CASHBACK } from '../data/products'
 
 // Generate unique ID
 export const generateId = () => {

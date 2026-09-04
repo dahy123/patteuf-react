@@ -1,13 +1,24 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { formatAr, CASHBACK_AMOUNT } from '../utils/helpers'
+import { formatAr } from '../utils/helpers'
+import { PARRAIN_CASHBACK } from '../data/products'
 import {
-  ShoppingCart, Plus, Minus, X, Check, User, Phone,
+  Plus, Minus, X, Check, User, Phone,
   Gift, ChevronDown, ChevronUp, History, Sparkles, Tag, PartyPopper,
+  Package, Egg, Drumstick,
 } from 'lucide-react'
 
+const productIcons = {
+  'pack-1': Tag,
+  'pack-2': Tag,
+  'simple-3': Package,
+  'simple-4': Egg,
+  'simple-5': Drumstick,
+}
+
 export default function Sale() {
-  const { packs, processSale, sales } = useApp()
+  const { getProductsWithStock, processSale, sales } = useApp()
+  const products = getProductsWithStock()
   const [items, setItems] = useState([])
   const [buyerName, setBuyerName] = useState('')
   const [buyerPhone, setBuyerPhone] = useState('')
@@ -16,14 +27,21 @@ export default function Sale() {
   const [lastSale, setLastSale] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
 
-  const addItem = (pack) => {
-    if (pack.quantity <= 0) return
-    const existing = items.find(i => i.id === pack.id)
+  const addItem = (product) => {
+    if (product.currentStock <= 0) return
+    const existing = items.find(i => i.id === product.id)
     if (existing) {
-      if (existing.qty >= pack.quantity) return
-      setItems(items.map(i => i.id === pack.id ? { ...i, qty: i.qty + 1 } : i))
+      if (existing.qty >= product.currentStock) return
+      setItems(items.map(i => i.id === product.id ? { ...i, qty: i.qty + 1 } : i))
     } else {
-      setItems([...items, { id: pack.id, name: pack.name, price: pack.price, qty: 1, maxQty: pack.quantity }])
+      setItems([...items, {
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        type: product.type,
+        qty: 1,
+        maxQty: product.currentStock,
+      }])
     }
   }
 
@@ -36,13 +54,32 @@ export default function Sale() {
   const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
   const totalItems = items.reduce((sum, item) => sum + item.qty, 0)
 
+  // Only show cashback info if there's at least one pack in cart
+  const cartHasPack = items.some(i => i.type === 'pack')
+  const totalCashback = items.reduce((sum, i) => {
+    const prod = products.find(p => p.id === i.id)
+    return sum + (prod?.cashback || 0) * i.qty
+  }, 0)
+
   const handleSale = () => {
     if (items.length === 0) return
-    const sale = processSale({ items, buyerName: buyerName.trim(), buyerPhone: buyerPhone.trim(), parrainRefCode: parrainRefCode.trim().toUpperCase() })
-    setLastSale(sale); setShowSuccess(true); setItems([]); setBuyerName(''); setBuyerPhone(''); setParrainRefCode('')
+    const sale = processSale({
+      items,
+      buyerName: buyerName.trim(),
+      buyerPhone: buyerPhone.trim(),
+      parrainRefCode: parrainRefCode.trim().toUpperCase(),
+    })
+    setLastSale(sale)
+    setShowSuccess(true)
+    setItems([])
+    setBuyerName('')
+    setBuyerPhone('')
+    setParrainRefCode('')
   }
 
   const recentSales = sales.slice(0, 15)
+  const packs = products.filter(p => p.type === 'pack')
+  const simples = products.filter(p => p.type === 'simple')
 
   return (
     <div className="p-4 space-y-5 animate-fade-in">
@@ -70,18 +107,25 @@ export default function Sale() {
                 <span className="text-sm text-slate-500">Code réf.</span>
                 <span className="font-mono text-sm font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-md">{lastSale.refCode}</span>
               </div>
-              <div className="border-t border-slate-200 pt-3 space-y-1.5">
-                <div className="flex items-center gap-2 text-emerald-600">
-                  <Gift className="w-4 h-4" />
-                  <span className="text-sm font-semibold">+{formatAr(lastSale.cashback)} cashback</span>
-                </div>
-                {lastSale.parrainRefCode && (
-                  <div className="flex items-center gap-2 text-violet-600">
-                    <Sparkles className="w-4 h-4" />
-                    <span className="text-xs font-medium">Parrain reçoit {formatAr(200)} de bonus</span>
+              {lastSale.hasPack && (
+                <div className="border-t border-slate-200 pt-3 space-y-1.5">
+                  <div className="flex items-center gap-2 text-emerald-600">
+                    <Gift className="w-4 h-4" />
+                    <span className="text-sm font-semibold">+{formatAr(lastSale.cashback)} cashback</span>
                   </div>
-                )}
-              </div>
+                  {lastSale.parrainRefCode && (
+                    <div className="flex items-center gap-2 text-violet-600">
+                      <Sparkles className="w-4 h-4" />
+                      <span className="text-xs font-medium">Parrain reçoit {formatAr(PARRAIN_CASHBACK)} de bonus</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {!lastSale.hasPack && (
+                <div className="border-t border-slate-200 pt-3">
+                  <p className="text-xs text-slate-400 italic">Produit simple — pas de cashback</p>
+                </div>
+              )}
             </div>
             <button onClick={() => setShowSuccess(false)} className="btn btn-primary w-full">Continuer</button>
           </div>
@@ -90,33 +134,72 @@ export default function Sale() {
 
       <div>
         <h1 className="text-xl font-bold text-slate-800">Point de vente</h1>
-        <p className="text-slate-500 text-sm mt-0.5">Sélectionnez les packs à vendre</p>
+        <p className="text-slate-500 text-sm mt-0.5">Sélectionnez les produits à vendre</p>
       </div>
 
-      {/* Pack Selection */}
+      {/* Packs */}
       <div className="card p-4">
         <div className="flex items-center gap-2 mb-4">
-          <ShoppingCart className="w-4 h-4 text-slate-400" />
-          <h3 className="text-sm font-semibold text-slate-700">Packs disponibles</h3>
+          <Tag className="w-4 h-4 text-brand-500" />
+          <h3 className="text-sm font-semibold text-slate-700">Packs — Acheter et Gagner</h3>
+          <span className="badge bg-emerald-100 text-emerald-700 text-[10px]">+Cashback</span>
         </div>
         <div className="grid grid-cols-1 gap-2">
-          {packs.map(pack => {
-            const outOfStock = pack.quantity <= 0
-            const lowStock = pack.quantity > 0 && pack.quantity <= 10
+          {packs.map(product => {
+            const Icon = productIcons[product.id] || Tag
+            const outOfStock = product.currentStock <= 0
+            const lowStock = product.currentStock > 0 && product.currentStock <= 10
             return (
-              <button key={pack.id} onClick={() => addItem(pack)} disabled={outOfStock}
+              <button key={product.id} onClick={() => addItem(product)} disabled={outOfStock}
                 className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-150 ${outOfStock ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed opacity-60' : 'bg-white border-slate-200 hover:border-brand-300 hover:bg-brand-50/30 active:scale-[0.98] cursor-pointer'}`}>
                 <div className="text-left flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${outOfStock ? 'bg-slate-100' : 'bg-brand-50'}`}>
-                    <Tag className={`w-5 h-5 ${outOfStock ? 'text-slate-300' : 'text-brand-500'}`} />
+                    <Icon className={`w-5 h-5 ${outOfStock ? 'text-slate-300' : 'text-brand-500'}`} />
                   </div>
                   <div>
-                    <div className="font-semibold text-sm text-slate-800">{pack.name}</div>
-                    <div className="text-xs text-slate-400">{formatAr(pack.price)}</div>
+                    <div className="font-semibold text-sm text-slate-800">{product.name}</div>
+                    <div className="text-xs text-slate-400">{formatAr(product.price)}</div>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <Gift className="w-3 h-3 text-emerald-500" />
+                      <span className="text-[10px] text-emerald-600 font-medium">+{formatAr(product.cashback)} cashback</span>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className={`text-lg font-bold tabular-nums ${outOfStock ? 'text-slate-300' : lowStock ? 'text-rose-500' : 'text-slate-700'}`}>{pack.quantity}</div>
+                  <div className={`text-lg font-bold tabular-nums ${outOfStock ? 'text-slate-300' : lowStock ? 'text-rose-500' : 'text-slate-700'}`}>{product.currentStock}</div>
+                  <div className="text-[10px] text-slate-400 uppercase tracking-wider">{outOfStock ? 'Épuisé' : 'restants'}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Produits simples */}
+      <div className="card p-4">
+        <div className="flex items-center gap-2 mb-4">
+          <Package className="w-4 h-4 text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-700">Produits simples</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {simples.map(product => {
+            const Icon = productIcons[product.id] || Package
+            const outOfStock = product.currentStock <= 0
+            const lowStock = product.currentStock > 0 && product.currentStock <= 10
+            return (
+              <button key={product.id} onClick={() => addItem(product)} disabled={outOfStock}
+                className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-150 ${outOfStock ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed opacity-60' : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 active:scale-[0.98] cursor-pointer'}`}>
+                <div className="text-left flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${outOfStock ? 'bg-slate-100' : 'bg-slate-50'}`}>
+                    <Icon className={`w-5 h-5 ${outOfStock ? 'text-slate-300' : 'text-slate-500'}`} />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-sm text-slate-800">{product.name}</div>
+                    <div className="text-xs text-slate-400">{formatAr(product.price)}</div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className={`text-lg font-bold tabular-nums ${outOfStock ? 'text-slate-300' : lowStock ? 'text-rose-500' : 'text-slate-700'}`}>{product.currentStock}</div>
                   <div className="text-[10px] text-slate-400 uppercase tracking-wider">{outOfStock ? 'Épuisé' : 'restants'}</div>
                 </div>
               </button>
@@ -141,7 +224,10 @@ export default function Sale() {
             {items.map(item => (
               <div key={item.id} className="flex items-center gap-3 py-2.5 border-b border-slate-100 last:border-0">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-700 truncate">{item.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-slate-700 truncate">{item.name}</p>
+                    {item.type === 'pack' && <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded-full font-medium">Pack</span>}
+                  </div>
                   <p className="text-xs text-slate-400">{formatAr(item.price)}</p>
                 </div>
                 <div className="flex items-center gap-1.5">
@@ -171,17 +257,24 @@ export default function Sale() {
           <Phone className="w-4 h-4 text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
           <input type="tel" placeholder="Numéro de téléphone" value={buyerPhone} onChange={e => setBuyerPhone(e.target.value)} className="input pl-10" />
         </div>
-        <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3.5">
-          <div className="flex items-center gap-2 mb-2">
-            <Gift className="w-4 h-4 text-amber-600" />
-            <label className="text-xs font-semibold text-amber-700">Code Parrain</label>
+        {cartHasPack && (
+          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3.5">
+            <div className="flex items-center gap-2 mb-2">
+              <Gift className="w-4 h-4 text-amber-600" />
+              <label className="text-xs font-semibold text-amber-700">Code Parrain</label>
+            </div>
+            <input type="text" placeholder="Ex: A1B2C3D4" value={parrainRefCode} onChange={e => setParrainRefCode(e.target.value.toUpperCase())}
+              className="input border-amber-300 focus:border-amber-500 font-mono uppercase tracking-wider text-center text-sm" maxLength={8} />
+            <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
+              <Sparkles className="w-3 h-3" /> Le parrain recevra {formatAr(PARRAIN_CASHBACK)} de bonus
+            </p>
           </div>
-          <input type="text" placeholder="Ex: A1B2C3D4" value={parrainRefCode} onChange={e => setParrainRefCode(e.target.value.toUpperCase())}
-            className="input border-amber-300 focus:border-amber-500 font-mono uppercase tracking-wider text-center text-sm" maxLength={8} />
-          <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
-            <Sparkles className="w-3 h-3" /> Le parrain recevra 200 Ar de bonus
-          </p>
-        </div>
+        )}
+        {!cartHasPack && items.length > 0 && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <p className="text-xs text-slate-400 italic">Les produits simples ne génèrent pas de cashback ni de bonus parrainage.</p>
+          </div>
+        )}
       </div>
 
       {/* Total & Checkout */}
@@ -194,7 +287,9 @@ export default function Sale() {
             </div>
             <div className="text-right">
               <p className="text-xs text-slate-400">{totalItems} article{totalItems > 1 ? 's' : ''}</p>
-              <p className="text-xs text-emerald-500 font-medium">+{formatAr(CASHBACK_AMOUNT)} cashback</p>
+              {cartHasPack && (
+                <p className="text-xs text-emerald-500 font-medium">+{formatAr(totalCashback)} cashback</p>
+              )}
             </div>
           </div>
           <button onClick={handleSale} className="btn btn-success w-full py-3.5 text-base">
@@ -223,16 +318,28 @@ export default function Sale() {
               {recentSales.map(sale => (
                 <div key={sale.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center"><User className="w-3.5 h-3.5 text-slate-400" /></div>
+                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center">
+                      {sale.hasPack ? <Gift className="w-3.5 h-3.5 text-emerald-500" /> : <Package className="w-3.5 h-3.5 text-slate-400" />}
+                    </div>
                     <div>
                       <p className="text-sm font-medium text-slate-700">{sale.buyerName}</p>
                       <p className="text-[11px] text-slate-400">
                         {new Date(sale.date).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         {' · '}<span className="font-mono">{sale.refCode}</span>
                       </p>
+                      <div className="flex gap-1 mt-0.5">
+                        {sale.items.map((it, idx) => (
+                          <span key={idx} className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full">
+                            {it.name} x{it.qty}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  <span className="text-sm font-bold text-brand-700 tabular-nums">{formatAr(sale.total)}</span>
+                  <div className="text-right">
+                    <span className="text-sm font-bold text-brand-700 tabular-nums">{formatAr(sale.total)}</span>
+                    {sale.hasPack && <p className="text-[10px] text-emerald-500 font-medium">+{formatAr(sale.cashback)}</p>}
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,5 +1,6 @@
 import { useApp } from '../context/AppContext'
-import { formatAr, CASHBACK_AMOUNT, PARRAIN_CASHBACK, PACK_PRICE } from '../utils/helpers'
+import { formatAr, CASHBACK_AMOUNT, PARRAIN_CASHBACK } from '../utils/helpers'
+import { products } from '../data/products'
 import { Gift, Users, ShoppingCart, Sparkles, Trophy, ChevronRight, Zap, TrendingUp, HelpCircle, Award } from 'lucide-react'
 
 export default function Marketing() {
@@ -7,8 +8,14 @@ export default function Marketing() {
   const stats = getStats()
   const topCagnottes = [...cagnottes].sort((a, b) => b.balance - a.balance).slice(0, 10)
 
+  // Get pack prices from products
+  const pack1 = products.find(p => p.id === 'pack-1')
+  const pack2 = products.find(p => p.id === 'pack-2')
+  const packPrices = [pack1?.price, pack2?.price].filter(Boolean)
+  const minPackPrice = packPrices.length > 0 ? Math.min(...packPrices) : 2600
+
   const steps = [
-    { num: 1, icon: ShoppingCart, title: 'Achetez un Pack', desc: `Chaque pack coûte ${formatAr(PACK_PRICE)}. Vous recevez votre code unique.`, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
+    { num: 1, icon: ShoppingCart, title: 'Achetez un Pack', desc: `Chaque pack coûte à partir de ${formatAr(minPackPrice)}. Vous recevez votre code unique.`, bg: 'bg-blue-50', iconColor: 'text-blue-500' },
     { num: 2, icon: Gift, title: `Gagnez ${formatAr(CASHBACK_AMOUNT)}`, desc: 'Immédiatement, 200 Ar sont ajoutés à votre cagnotte !', bg: 'bg-emerald-50', iconColor: 'text-emerald-500' },
     { num: 3, icon: Users, title: 'Parrainez vos amis', desc: `Partagez votre code. Quand un ami l'utilise, vous gagnez ${formatAr(PARRAIN_CASHBACK)} !`, bg: 'bg-violet-50', iconColor: 'text-violet-500' },
   ]
@@ -18,6 +25,7 @@ export default function Marketing() {
     { q: 'Puis-je cumuler les cashbacks ?', a: `Oui ! Chaque achat génère un nouveau cashback de ${formatAr(CASHBACK_AMOUNT)}.` },
     { q: 'Comment consulter ma cagnotte ?', a: 'Allez dans l\'onglet "Cagnotte" et entrez votre code unique.' },
     { q: 'Y a-t-il une limite au cashback ?', a: 'Non ! Plus vous achetez et plus vous parrainez, plus votre cagnotte grossit.' },
+    { q: 'Les produits simples génèrent-ils du cashback ?', a: 'Non, seuls les packs "Acheter et Gagner" génèrent du cashback et des bonus de parrainage.' },
   ]
 
   return (
@@ -32,7 +40,7 @@ export default function Marketing() {
         <div className="relative">
           <div className="w-14 h-14 bg-white/15 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm"><Sparkles className="w-7 h-7" /></div>
           <h1 className="text-2xl font-bold">Acheter et Gagner</h1>
-          <p className="text-brand-200 text-sm mt-2 max-w-xs mx-auto">Programme de cashback exclusif pour chaque achat</p>
+          <p className="text-brand-200 text-sm mt-2 max-w-xs mx-auto">Programme de cashback exclusif pour chaque achat de pack</p>
         </div>
       </div>
 
@@ -64,7 +72,7 @@ export default function Marketing() {
         <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 border border-emerald-200 rounded-2xl p-4 text-center">
           <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center mx-auto mb-2"><Gift className="w-5 h-5 text-emerald-600" /></div>
           <p className="text-2xl font-bold text-emerald-700 tabular-nums">{formatAr(CASHBACK_AMOUNT)}</p>
-          <p className="text-xs text-emerald-600 mt-1 font-medium">Cashback / achat</p>
+          <p className="text-xs text-emerald-600 mt-1 font-medium">Cashback / pack</p>
         </div>
         <div className="bg-gradient-to-br from-violet-50 to-violet-100/50 border border-violet-200 rounded-2xl p-4 text-center">
           <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center mx-auto mb-2"><Users className="w-5 h-5 text-violet-600" /></div>

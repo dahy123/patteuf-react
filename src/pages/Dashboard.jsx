@@ -2,12 +2,13 @@ import { useApp } from '../context/AppContext'
 import { formatAr } from '../utils/helpers'
 import {
   Package, ShoppingCart, TrendingUp, Gift,
-  AlertTriangle, Users, ArrowRight, Clock,
+  AlertTriangle, Users, ArrowRight, Clock, Wallet, Tag,
 } from 'lucide-react'
 
 export default function Dashboard() {
-  const { getStats, sales, packs } = useApp()
+  const { getStats, sales, getProductsWithStock, cagnottes } = useApp()
   const stats = getStats()
+  const products = getProductsWithStock()
 
   const statCards = [
     {
@@ -45,6 +46,7 @@ export default function Dashboard() {
   ]
 
   const recentSales = sales.slice(0, 5)
+  const topCagnottes = [...cagnottes].sort((a, b) => b.balance - a.balance).slice(0, 5)
 
   return (
     <div className="p-4 space-y-5 animate-fade-in">
@@ -76,17 +78,17 @@ export default function Dashboard() {
       </div>
 
       {/* Low Stock Alert */}
-      {stats.lowStockPacks.length > 0 && (
+      {stats.lowStockProducts.length > 0 && (
         <div className="card border-rose-200 bg-rose-50/80 p-4 animate-fade-in">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="w-4 h-4 text-rose-500" />
             <h3 className="text-sm font-semibold text-rose-700">Stock faible</h3>
           </div>
           <div className="space-y-1.5">
-            {stats.lowStockPacks.map(p => (
+            {stats.lowStockProducts.map(p => (
               <div key={p.id} className="flex items-center justify-between">
                 <span className="text-sm text-rose-600">{p.name}</span>
-                <span className="badge bg-rose-100 text-rose-700">{p.quantity} restants</span>
+                <span className="badge bg-rose-100 text-rose-700">{p.currentStock} restants</span>
               </div>
             ))}
           </div>
@@ -105,14 +107,18 @@ export default function Dashboard() {
           </a>
         </div>
         <div className="space-y-3">
-          {packs.map(pack => {
-            const pct = Math.min(100, (pack.quantity / 100) * 100)
-            const color = pack.quantity <= 10 ? 'bg-rose-500' : pack.quantity <= 30 ? 'bg-amber-500' : 'bg-emerald-500'
+          {products.map(product => {
+            const pct = Math.min(100, (product.currentStock / 100) * 100)
+            const color = product.currentStock <= 10 ? 'bg-rose-500' : product.currentStock <= 30 ? 'bg-amber-500' : 'bg-emerald-500'
+            const isPack = product.type === 'pack'
             return (
-              <div key={pack.id}>
+              <div key={product.id}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-sm text-slate-600 font-medium">{pack.name}</span>
-                  <span className="text-sm font-bold text-slate-800 tabular-nums">{pack.quantity}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-slate-600 font-medium">{product.name}</span>
+                    {isPack && <Tag className="w-3 h-3 text-brand-400" />}
+                  </div>
+                  <span className="text-sm font-bold text-slate-800 tabular-nums">{product.currentStock}</span>
                 </div>
                 <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
                   <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
@@ -148,7 +154,7 @@ export default function Dashboard() {
               <div key={sale.id} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
                 <div className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-full bg-brand-50 flex items-center justify-center">
-                    <Users className="w-4 h-4 text-brand-500" />
+                    {sale.hasPack ? <Gift className="w-4 h-4 text-brand-500" /> : <Users className="w-4 h-4 text-brand-500" />}
                   </div>
                   <div>
                     <p className="text-sm font-medium text-slate-700">{sale.buyerName}</p>
@@ -161,13 +167,47 @@ export default function Dashboard() {
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-bold text-brand-700">{formatAr(sale.total)}</p>
-                  <p className="text-[10px] text-emerald-500 font-medium">+{formatAr(sale.cashback)}</p>
+                  {sale.hasPack && <p className="text-[10px] text-emerald-500 font-medium">+{formatAr(sale.cashback)}</p>}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Top Cagnottes */}
+      {topCagnottes.length > 0 && (
+        <div className="card p-4">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Wallet className="w-4 h-4 text-amber-500" />
+              <h3 className="text-sm font-semibold text-slate-700">Top Cagnottes</h3>
+            </div>
+            <a href="/cagnotte" className="text-xs text-brand-600 font-medium no-underline flex items-center gap-1 hover:text-brand-700 transition-colors">
+              Voir tout <ArrowRight className="w-3 h-3" />
+            </a>
+          </div>
+          <div className="space-y-0">
+            {topCagnottes.map((c, idx) => (
+              <div key={c.refCode} className="flex items-center justify-between py-3 border-b border-slate-100 last:border-0">
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {idx + 1}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">{c.buyerName || 'Anonyme'}</p>
+                    <p className="text-[11px] text-slate-400 font-mono">{c.refCode}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-emerald-600 tabular-nums">{formatAr(c.balance)}</p>
+                  <p className="text-[10px] text-slate-400">{c.cashbacks.length} gains</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
