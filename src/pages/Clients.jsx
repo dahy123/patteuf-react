@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext'
 import { formatAr } from '../utils/helpers'
 import {
   Users, Plus, Search, Phone, MapPin, Edit3, Trash2, X, Check,
-  TrendingUp, User,
+  TrendingUp, User, Copy, Gift,
 } from 'lucide-react'
 
 export default function Clients() {
@@ -11,8 +11,9 @@ export default function Clients() {
   const [searchQuery, setSearchQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
-  const [form, setForm] = useState({ name: '', phone: '', address: '' })
+  const [form, setForm] = useState({ name: '', phone: '', address: '', parrainRefCode: '' })
   const [selectedClient, setSelectedClient] = useState(null)
+  const [copiedCode, setCopiedCode] = useState(null)
 
   const filteredClients = searchQuery ? searchClients(searchQuery) : clients
 
@@ -22,7 +23,7 @@ export default function Clients() {
   }
 
   const resetForm = () => {
-    setForm({ name: '', phone: '', address: '' })
+    setForm({ name: '', phone: '', address: '', parrainRefCode: '' })
     setEditId(null)
     setShowForm(false)
   }
@@ -36,6 +37,7 @@ export default function Clients() {
         name: form.name.trim(),
         phone: form.phone.trim(),
         address: form.address.trim(),
+        parrainRefCode: form.parrainRefCode.trim().toUpperCase(),
       })
     } else {
       addClient(form)
@@ -44,7 +46,7 @@ export default function Clients() {
   }
 
   const handleEdit = (client) => {
-    setForm({ name: client.name, phone: client.phone, address: client.address })
+    setForm({ name: client.name, phone: client.phone, address: client.address, parrainRefCode: client.parrainRefCode || '' })
     setEditId(client.id)
     setShowForm(true)
   }
@@ -139,6 +141,18 @@ export default function Clients() {
                 rows={2}
               />
             </div>
+            <div>
+              <label className="text-xs font-medium text-slate-500 mb-1.5 block">Code parrain (optionnel)</label>
+              <input
+                type="text"
+                placeholder="Ex: OLD1-PAT"
+                value={form.parrainRefCode}
+                onChange={e => setForm({ ...form, parrainRefCode: e.target.value.toUpperCase() })}
+                className="input font-mono uppercase tracking-wider"
+                maxLength={12}
+              />
+              <p className="text-[11px] text-slate-400 mt-1">Laisser vide si pas de parrain</p>
+            </div>
             <div className="flex gap-2 pt-1">
               <button type="submit" className="btn btn-success flex-1">
                 <Check className="w-4 h-4" /> {editId ? 'Enregistrer' : 'Ajouter'}
@@ -183,6 +197,38 @@ export default function Clients() {
             </button>
           </div>
 
+          {selectedClient.refCode && (
+            <div className="mb-3 bg-white border border-brand-200 rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Code parrainage</p>
+                  <p className="text-lg font-bold text-brand-700 font-mono tracking-wider mt-0.5">{selectedClient.refCode}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(selectedClient.refCode)
+                    setCopiedCode(selectedClient.refCode)
+                    setTimeout(() => setCopiedCode(null), 1500)
+                  }}
+                  className="p-2 rounded-lg bg-brand-50 hover:bg-brand-100 text-brand-600 transition"
+                  title="Copier le code"
+                >
+                  {copiedCode === selectedClient.refCode ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          )}
+          {selectedClient.parrainRefCode && (
+            <div className="mb-4 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3">
+              <div className="flex items-center gap-2">
+                <Gift className="w-4 h-4 text-amber-600" />
+                <div>
+                  <p className="text-[10px] text-amber-600 uppercase tracking-wider font-medium">Parrain</p>
+                  <p className="text-sm font-bold text-amber-700 font-mono tracking-wider">{selectedClient.parrainRefCode}</p>
+                </div>
+              </div>
+            </div>
+          )}
           <div className="space-y-2 mb-4">
             {selectedClient.phone && (
               <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -282,7 +328,15 @@ export default function Clients() {
                     </div>
                     <div className="min-w-0">
                       <h3 className="font-semibold text-slate-800 text-sm truncate">{client.name}</h3>
-                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                      <div className="flex items-center gap-2 text-xs">
+                        {client.refCode && (
+                          <span className="font-mono text-brand-600 font-semibold">{client.refCode}</span>
+                        )}
+                        {client.parrainRefCode && (
+                          <span className="font-mono text-amber-600 text-[10px] bg-amber-50 px-1.5 py-0.5 rounded-full">parrain: {client.parrainRefCode}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
                         {client.phone && (
                           <span className="flex items-center gap-1">
                             <Phone className="w-3 h-3" /> {client.phone}

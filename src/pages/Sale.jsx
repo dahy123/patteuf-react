@@ -20,7 +20,6 @@ export default function Sale() {
   const { getProductsWithStock, processSale, sales, clients, addClient, searchClients } = useApp()
   const products = getProductsWithStock()
   const [items, setItems] = useState([])
-  const [parrainRefCode, setParrainRefCode] = useState('')
   const [showSuccess, setShowSuccess] = useState(false)
   const [lastSale, setLastSale] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
@@ -98,7 +97,6 @@ export default function Sale() {
       items,
       buyerName: buyerName.trim(),
       buyerPhone: buyerPhone.trim(),
-      parrainRefCode: parrainRefCode.trim().toUpperCase(),
       clientId: selectedClientId || '',
     })
     setLastSale(sale)
@@ -106,7 +104,6 @@ export default function Sale() {
     setItems([])
     setSelectedClientId('')
     setQuickClient({ name: '', phone: '', address: '' })
-    setParrainRefCode('')
   }
 
   const recentSales = sales.slice(0, 15)
@@ -297,22 +294,30 @@ export default function Sale() {
 
         {/* Selected client display */}
         {selectedClient ? (
-          <div className="flex items-center justify-between bg-brand-50 border border-brand-200 rounded-xl p-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-brand-100 rounded-xl flex items-center justify-center">
-                <User className="w-4 h-4 text-brand-600" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-brand-800">{selectedClient.name}</p>
-                <div className="flex items-center gap-2 text-xs text-brand-600">
-                  {selectedClient.phone && <span>{selectedClient.phone}</span>}
-                  {selectedClient.address && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{selectedClient.address}</span>}
+          <div className="bg-brand-50 border border-brand-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-brand-100 rounded-xl flex items-center justify-center">
+                  <User className="w-4 h-4 text-brand-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-brand-800">{selectedClient.name}</p>
+                  <div className="flex items-center gap-2 text-xs text-brand-600">
+                    {selectedClient.phone && <span>{selectedClient.phone}</span>}
+                    {selectedClient.address && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{selectedClient.address}</span>}
+                  </div>
                 </div>
               </div>
+              <button onClick={handleClearClient} className="p-1.5 rounded-lg hover:bg-brand-100 text-brand-400 hover:text-brand-600 transition">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-            <button onClick={handleClearClient} className="p-1.5 rounded-lg hover:bg-brand-100 text-brand-400 hover:text-brand-600 transition">
-              <X className="w-4 h-4" />
-            </button>
+            {selectedClient.refCode && (
+              <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-brand-100">
+                <span className="text-[10px] text-slate-400 uppercase tracking-wider">Code parrainage</span>
+                <span className="font-mono text-sm font-bold text-brand-700 tracking-wider">{selectedClient.refCode}</span>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -416,18 +421,20 @@ export default function Sale() {
           </div>
         )}
 
-        {/* Parrain */}
-        {cartHasPack && (
+        {/* Parrainage auto */}
+        {cartHasPack && selectedClient?.parrainRefCode && (
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3.5">
-            <div className="flex items-center gap-2 mb-2">
-              <Gift className="w-4 h-4 text-amber-600" />
-              <label className="text-xs font-semibold text-amber-700">Code Parrain</label>
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-600" />
+              <p className="text-xs font-semibold text-amber-700">
+                Parrainage auto — <span className="font-mono">{selectedClient.parrainRefCode}</span> recevra {formatAr(PARRAIN_CASHBACK)} de bonus
+              </p>
             </div>
-            <input type="text" placeholder="Ex: A1B2C3D4" value={parrainRefCode} onChange={e => setParrainRefCode(e.target.value.toUpperCase())}
-              className="input border-amber-300 focus:border-amber-500 font-mono uppercase tracking-wider text-center text-sm" maxLength={8} />
-            <p className="text-[11px] text-amber-600 mt-2 flex items-center gap-1">
-              <Sparkles className="w-3 h-3" /> Le parrain recevra {formatAr(PARRAIN_CASHBACK)} de bonus
-            </p>
+          </div>
+        )}
+        {cartHasPack && !selectedClient?.parrainRefCode && (
+          <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <p className="text-xs text-slate-400 italic">Pas de parrain associé à ce client. Ajoutez un parrain dans la gestion clients.</p>
           </div>
         )}
         {!cartHasPack && items.length > 0 && (

@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import {
   Users, Plus, Shield, User, Key, Trash2, X, Check,
   Search, ChevronDown, Crown, Eye, EyeOff, Lock,
-  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, UserCog,
+  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, UserCog, Boxes,
 } from 'lucide-react'
 import { ALL_PERMISSIONS } from '../context/AuthContext'
 
@@ -11,6 +11,7 @@ const PERMISSION_META = {
   dashboard: { label: 'Dashboard', icon: LayoutDashboard },
   stock: { label: 'Stock', icon: Package },
   vente: { label: 'Vente', icon: ShoppingCart },
+  produits: { label: 'Produits', icon: Boxes },
   clients: { label: 'Clients', icon: Users },
   cagnotte: { label: 'Cagnotte', icon: Wallet },
   marketing: { label: 'Marketing', icon: Megaphone },

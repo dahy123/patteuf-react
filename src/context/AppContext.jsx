@@ -23,6 +23,21 @@ function loadSavedData() {
   return null
 }
 
+// Generate a refCode like KEV1-PAT, OLD1-PAT, etc.
+function generateRefCode(name, existingClients) {
+  const prefix = name.trim().toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3)
+  if (!prefix) return 'UNK1-PAT'
+  // Find the next available number
+  const existingCodes = existingClients
+    .map(c => c.refCode)
+    .filter(code => code && code.startsWith(prefix + '-PAT') || code?.startsWith(prefix) && code?.endsWith('-PAT'))
+  let num = 1
+  while (existingClients.some(c => c.refCode === `${prefix}${num}-PAT`)) {
+    num++
+  }
+  return `${prefix}${num}-PAT`
+}
+
 function loadSavedProducts() {
   try {
     const saved = localStorage.getItem(PRODUCTS_KEY)
@@ -157,19 +172,36 @@ export function AppProvider({ children }) {
     })
   }, [])
 
+  // ── Migrate existing clients without refCode ──
+  useEffect(() => {
+    setClients(prev => {
+      const needMigration = prev.some(c => !c.refCode)
+      if (!needMigration) return prev
+      let migrated = [...prev]
+      return migrated.map(c => {
+        if (c.refCode) return c
+        return { ...c, refCode: generateRefCode(c.name, migrated.filter(m => m.id !== c.id)) }
+      })
+    })
+  }, [])
+
   // ── Clients CRUD ──
-  const addClient = useCallback(({ name, phone, address }) => {
-    const client = {
-      id: generateId(),
-      name: name.trim(),
-      phone: phone.trim(),
-      address: address.trim(),
-      createdAt: new Date().toISOString(),
-      totalPurchases: 0,
-      totalSpent: 0,
-    }
-    setClients(prev => [client, ...prev])
-    return client
+  const addClient = useCallback(({ name, phone, address, parrainRefCode }) => {
+    setClients(prev => {
+      const refCode = generateRefCode(name, prev)
+      const client = {
+        id: generateId(),
+        name: name.trim(),
+        phone: phone.trim(),
+        address: address.trim(),
+        refCode,
+        parrainRefCode: parrainRefCode?.trim().toUpperCase() || '',
+        createdAt: new Date().toISOString(),
+        totalPurchases: 0,
+        totalSpent: 0,
+      }
+      return [client, ...prev]
+    })
   }, [])
 
   const updateClient = useCallback((clientId, updates) => {
@@ -224,13 +256,21 @@ export function AppProvider({ children }) {
   }, [])
 
   // Process a sale
-  const processSale = useCallback(({ items, buyerName, buyerPhone, parrainRefCode, clientId }) => {
+  const processSale = useCallback(({ items, buyerName, buyerPhone, clientId }) => {
     const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
     const hasPack = items.some(i => i.type === 'pack')
     const totalCashback = hasPack ? items.reduce((sum, i) => {
       const prod = products.find(p => p.id === i.id)
       return sum + (prod?.cashback || 0) * i.qty
     }, 0) : 0
+
+    // Use client's refCode if linked, otherwise generate a fallback
+    const buyerClient = clientId ? clients.find(c => c.id === clientId) : null
+    const buyerRefCode = buyerClient?.refCode || generateId().toUpperCase().slice(0, 8)
+    // Automatic parrainage: use the client's parrainRefCode (but not self-referral)
+    const autoParrainRefCode = (buyerClient?.parrainRefCode && buyerClient.parrainRefCode !== buyerRefCode)
+      ? buyerClient.parrainRefCode
+      : ''
 
     const sale = {
       id: generateId(),
@@ -242,10 +282,10 @@ export function AppProvider({ children }) {
       buyerName: buyerName || 'Anonyme',
       buyerPhone: buyerPhone || '',
       clientId: clientId || '',
-      refCode: generateId().toUpperCase().slice(0, 8),
+      refCode: buyerRefCode,
       cashback: totalCashback,
       hasPack,
-      parrainRefCode: parrainRefCode || '',
+      parrainRefCode: autoParrainRefCode,
     }
 
     // Deduct stock
@@ -287,8 +327,8 @@ export function AppProvider({ children }) {
             cashbacks: [{ amount: totalCashback, date: sale.date, type: 'purchase', saleId: sale.id }],
           })
         }
-        if (parrainRefCode) {
-          const parrainIdx = updated.findIndex(c => c.refCode === parrainRefCode)
+        if (autoParrainRefCode) {
+          const parrainIdx = updated.findIndex(c => c.refCode === autoParrainRefCode)
           if (parrainIdx >= 0) {
             updated[parrainIdx] = {
               ...updated[parrainIdx],
@@ -305,7 +345,7 @@ export function AppProvider({ children }) {
     }
 
     return sale
-  }, [products])
+  }, [products, clients])
 
   // Stats
   const getStats = useCallback(() => {
