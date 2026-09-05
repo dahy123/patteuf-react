@@ -1,6 +1,8 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { generateId } from '../utils/helpers'
 import { products as initialProducts, PARRAIN_CASHBACK } from '../data/products'
+import { isSupabaseConfigured } from '../utils/supabase'
+import { syncWithSupabase, pushToSupabase } from '../utils/supabaseSync'
 
 const AppContext = createContext(null)
 
@@ -27,9 +29,80 @@ export function AppProvider({ children }) {
   const [sales, setSales] = useState(() => saved?.sales || [])
   const [cagnottes, setCagnottes] = useState(() => saved?.cagnottes || [])
   const [clients, setClients] = useState(() => saved?.clients || [])
+  const [syncStatus, setSyncStatus] = useState('idle') // idle | syncing | synced | error
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
 
+  // ── Persist to localStorage on every change ──
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ stock, sales, cagnottes, clients }))
+  }, [stock, sales, cagnottes, clients])
+
+  // ── Online/offline detection ──
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  // ── Auto-sync on mount (pull from Supabase) ──
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+
+    const doInitialSync = async () => {
+      setSyncStatus('syncing')
+      const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
+      if (result.synced && result.data) {
+        setStock(result.data.stock || loadInitialStock())
+        setSales(result.data.sales || [])
+        setCagnottes(result.data.cagnottes || [])
+        setClients(result.data.clients || [])
+        setSyncStatus('synced')
+      } else {
+        setSyncStatus(result.reason === 'not_configured' ? 'idle' : 'error')
+      }
+    }
+    doInitialSync()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Run once on mount
+
+  // ── Debounced push to Supabase on data changes ──
+  const pushTimerRef = useRef(null)
+  useEffect(() => {
+    if (!isSupabaseConfigured() || !isOnline) return
+
+    // Debounce: wait 2s after last change before pushing
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
+    pushTimerRef.current = setTimeout(async () => {
+      setSyncStatus('syncing')
+      const result = await pushToSupabase({ stock, sales, cagnottes, clients })
+      setSyncStatus(result.ok ? 'synced' : 'error')
+    }, 2000)
+
+    return () => {
+      if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
+    }
+  }, [stock, sales, cagnottes, clients, isOnline])
+
+  // ── Manual sync trigger ──
+  const forceSync = useCallback(async () => {
+    if (!isSupabaseConfigured()) return { ok: false, reason: 'not_configured' }
+    setSyncStatus('syncing')
+    const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
+    if (result.synced && result.data) {
+      setStock(result.data.stock || loadInitialStock())
+      setSales(result.data.sales || [])
+      setCagnottes(result.data.cagnottes || [])
+      setClients(result.data.clients || [])
+      setSyncStatus('synced')
+    } else {
+      setSyncStatus('error')
+    }
+    return result
   }, [stock, sales, cagnottes, clients])
 
   // ── Clients CRUD ──
@@ -243,6 +316,10 @@ export function AppProvider({ children }) {
     sales,
     cagnottes,
     clients,
+    // Sync status
+    syncStatus,
+    isOnline,
+    forceSync,
     // Client CRUD
     addClient,
     updateClient,

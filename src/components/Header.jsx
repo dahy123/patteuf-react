@@ -1,6 +1,8 @@
 import { NavLink } from 'react-router-dom'
+import { useApp } from '../context/AppContext'
 import {
   LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, Users,
+  Cloud, CloudOff, RefreshCw, Check,
 } from 'lucide-react'
 
 const navItems = [
@@ -13,6 +15,22 @@ const navItems = [
 ]
 
 export default function Header() {
+  const { syncStatus, isOnline, forceSync } = useApp()
+
+  const syncIcon = {
+    idle: <Cloud className="w-3.5 h-3.5 text-white/40" />,
+    syncing: <RefreshCw className="w-3.5 h-3.5 text-amber-300 animate-spin" />,
+    synced: <Check className="w-3.5 h-3.5 text-emerald-300" />,
+    error: <CloudOff className="w-3.5 h-3.5 text-rose-300" />,
+  }[syncStatus] || <Cloud className="w-3.5 h-3.5 text-white/40" />
+
+  const syncLabel = {
+    idle: 'Hors-ligne',
+    syncing: 'Sync...',
+    synced: 'Sync OK',
+    error: 'Erreur',
+  }[syncStatus] || 'Hors-ligne'
+
   return (
     <header className="sticky top-0 z-40">
       {/* Top bar */}
@@ -33,7 +51,18 @@ export default function Header() {
               <span className="text-brand-200 text-[10px] font-medium leading-none mt-0.5">Gestion & Vente</span>
             </div>
           </NavLink>
-          <span className="badge bg-white/10 text-white/60 text-[10px]">MVP v1.0</span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={forceSync}
+              disabled={!isOnline || syncStatus === 'syncing'}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition text-white/70 hover:text-white disabled:opacity-40"
+              title={isOnline ? 'Synchroniser avec Supabase' : 'Hors-ligne — sync indisponible'}
+            >
+              {syncIcon}
+              <span className="text-[10px] font-medium hidden sm:inline">{syncLabel}</span>
+            </button>
+            <span className="badge bg-white/10 text-white/60 text-[10px]">MVP v1.0</span>
+          </div>
         </div>
       </div>
 

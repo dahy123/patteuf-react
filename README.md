@@ -1,16 +1,30 @@
-# React + Vite
+# PATTEUF - Gestion de Stock & Vente (PWA)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+**PATTEUF** est une application web progressive (PWA) développée avec **React**, **Vite**, **Tailwind CSS** et connectée à une base de données cloud **Supabase**. Elle est conçue pour gérer un point de vente (POS) avec un modèle marketing innovant de type "Acheter et Gagner".
 
-Currently, two official plugins are available:
+## 🚀 Fonctionnalités principales
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Gestion des Ventes (POS) :** Interface de caisse pour vendre des packs et des produits simples.
+- **Modèle "Acheter & Gagner" :** 
+  - Application automatique de cashback (200 Ar) pour l'acheteur sur les packs.
+  - Bonus de parrainage (200 Ar) pour le parrain.
+- **Gestion des Stocks en Temps Réel :** Suivi instantané des stocks synchronisé via Supabase PostgreSQL.
+- **Mode PWA :** Installable sur mobile et PC, avec un fonctionnement optimisé et rapide.
 
-## React Compiler
+## 📋 Grille Tarifaire & Produits
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Pack 1 (2600 Ar) :** 1 Patte + 2 Œufs (Gains : 200 Ar cashback / 200 Ar parrainage)
+- **Pack 2 (3000 Ar) :** 1 Patte + 1 Œuf + 1 Koudry (Gains : 200 Ar cashback / 200 Ar parrainage)
+- **Produits Simples :** 1 Patte (1000 Ar), 1 Œuf (800 Ar), 1 Koudry (1200 Ar)
 
-## Expanding the Oxlint configuration
+## 🛠️ Stack Technique
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- **Frontend :** React, Vite, Tailwind CSS, Vite PWA
+- **Base de Données & Cloud :** Supabase (PostgreSQL)
+- **Déploiement :** GitHub Pages
+
+## 📦 Installation & Lancement en Local
+
+1. Clonez le dépôt :
+   ```bash
+   git clone [https://github.com/dahy123/patteuf-react.git](https://github.com/dahy123/patteuf-react.git)
