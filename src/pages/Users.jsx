@@ -2,16 +2,30 @@ import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import {
   Users, Plus, Shield, User, Key, Trash2, X, Check,
-  Search, ChevronDown, Crown, Eye, EyeOff,
+  Search, ChevronDown, Crown, Eye, EyeOff, Lock,
+  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, UserCog,
 } from 'lucide-react'
+import { ALL_PERMISSIONS } from '../context/AuthContext'
+
+const PERMISSION_META = {
+  dashboard: { label: 'Dashboard', icon: LayoutDashboard },
+  stock: { label: 'Stock', icon: Package },
+  vente: { label: 'Vente', icon: ShoppingCart },
+  clients: { label: 'Clients', icon: Users },
+  cagnotte: { label: 'Cagnotte', icon: Wallet },
+  marketing: { label: 'Marketing', icon: Megaphone },
+  users: { label: 'Utilisateurs', icon: UserCog },
+}
 
 export default function UsersPage() {
-  const { users, currentUser, register, removeUser, resetPassword, changeUserRole } = useAuth()
+  const { users, currentUser, register, removeUser, resetPassword, changeUserRole, updatePermissions } = useAuth()
   const [showForm, setShowForm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [form, setForm] = useState({ name: '', username: '', password: '', role: 'moderator' })
   const [formError, setFormError] = useState('')
   const [showPassword, setShowPassword] = useState(false)
+  // Permissions panel
+  const [permUserId, setPermUserId] = useState(null)
 
   // Reset password state
   const [resetId, setResetId] = useState(null)
@@ -64,6 +78,13 @@ export default function UsersPage() {
 
   const adminCount = users.filter(u => u.role === 'admin').length
   const moderatorCount = users.filter(u => u.role === 'moderator').length
+
+  const togglePermission = (userId, perm) => {
+    const user = users.find(u => u.id === userId)
+    if (!user || user.role === 'admin') return
+    const updated = { ...user.permissions, [perm]: !user.permissions?.[perm] }
+    updatePermissions(userId, updated)
+  }
 
   return (
     <div className="p-4 space-y-5 animate-fade-in">
@@ -216,6 +237,17 @@ export default function UsersPage() {
                       </button>
                     )}
 
+                    {/* Permissions (non-admin users only) */}
+                    {user.role !== 'admin' && (
+                      <button
+                        onClick={() => setPermUserId(permUserId === user.id ? null : user.id)}
+                        className={`p-1.5 rounded-lg transition ${permUserId === user.id ? 'bg-gray-900 text-white' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-700'}`}
+                        title="Gérer les accès"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+
                     {/* Delete */}
                     {!isDefaultAdmin && !isCurrentUser && (
                       <button onClick={() => handleDelete(user)} className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-red-500 transition" title="Supprimer">
@@ -246,6 +278,33 @@ export default function UsersPage() {
                       <button onClick={() => handleResetPassword(user.id)} disabled={newPassword.length < 4} className="btn btn-primary px-4 py-2 text-sm disabled:opacity-40">
                         <Check className="w-3.5 h-3.5" /> OK
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Permissions panel */}
+                {permUserId === user.id && user.role !== 'admin' && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 animate-scale-in">
+                    <p className="text-xs font-semibold text-gray-500 mb-2.5">Accès aux modules</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {ALL_PERMISSIONS.map(perm => {
+                        const meta = PERMISSION_META[perm]
+                        const isEnabled = user.permissions?.[perm] ?? true
+                        return (
+                          <button
+                            key={perm}
+                            onClick={() => togglePermission(user.id, perm)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all border ${
+                              isEnabled
+                                ? 'bg-gray-900 text-white border-gray-900'
+                                : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400'
+                            }`}
+                          >
+                            <meta.icon className="w-3.5 h-3.5" />
+                            {meta.label}
+                          </button>
+                        )
+                      })}
                     </div>
                   </div>
                 )}

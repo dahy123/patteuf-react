@@ -16,6 +16,14 @@ function hashPassword(password) {
   return 'h_' + Math.abs(hash).toString(36)
 }
 
+// All available permission keys
+export const ALL_PERMISSIONS = ['dashboard', 'stock', 'vente', 'clients', 'cagnotte', 'marketing', 'users']
+
+// Default permissions for moderators (all true by default)
+const DEFAULT_MODERATOR_PERMISSIONS = Object.fromEntries(
+  ALL_PERMISSIONS.map(p => [p, true])
+)
+
 // Default admin account
 const DEFAULT_ADMIN = {
   id: 'admin-default-001',
@@ -23,17 +31,29 @@ const DEFAULT_ADMIN = {
   username: 'oldon',
   passwordHash: hashPassword('1234'),
   role: 'admin',
+  permissions: Object.fromEntries(ALL_PERMISSIONS.map(p => [p, true])),
   createdAt: new Date().toISOString(),
+}
+
+function ensurePermissions(user) {
+  if (user.permissions) return user
+  return {
+    ...user,
+    permissions: user.role === 'admin'
+      ? Object.fromEntries(ALL_PERMISSIONS.map(p => [p, true]))
+      : { ...DEFAULT_MODERATOR_PERMISSIONS },
+  }
 }
 
 function loadUsers() {
   try {
     const saved = JSON.parse(localStorage.getItem(USERS_KEY)) || []
+    const migrated = saved.map(ensurePermissions)
     // Ensure default admin exists
-    if (!saved.find(u => u.username === 'oldon')) {
-      return [DEFAULT_ADMIN, ...saved]
+    if (!migrated.find(u => u.username === 'oldon')) {
+      return [DEFAULT_ADMIN, ...migrated]
     }
-    return saved
+    return migrated
   } catch {
     return [DEFAULT_ADMIN]
   }
@@ -52,8 +72,17 @@ function loadSession() {
 }
 
 export function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(() => loadSession())
   const [users, setUsers] = useState(() => loadUsers())
+  const [currentUser, setCurrentUser] = useState(() => {
+    const session = loadSession()
+    if (!session) return null
+    // Migrate session: attach permissions from users list if missing
+    const user = users.find(u => u.id === session.id)
+    if (user) {
+      return { ...session, permissions: user.permissions }
+    }
+    return { ...session, permissions: session.permissions || Object.fromEntries(ALL_PERMISSIONS.map(p => [p, true])) }
+  })
 
   // Persist session
   useEffect(() => {
@@ -90,6 +119,9 @@ export function AuthProvider({ children }) {
       username: uname,
       passwordHash: hashPassword(password),
       role: userRole,
+      permissions: userRole === 'admin'
+        ? Object.fromEntries(ALL_PERMISSIONS.map(p => [p, true]))
+        : { ...DEFAULT_MODERATOR_PERMISSIONS },
       createdAt: new Date().toISOString(),
     }
 
@@ -99,7 +131,7 @@ export function AuthProvider({ children }) {
     // auto-login them
     const realUsers = users.filter(u => u.id !== 'admin-default-001')
     if (realUsers.length === 0) {
-      setCurrentUser({ id: user.id, name: user.name, username: user.username, role: user.role })
+      setCurrentUser({ id: user.id, name: user.name, username: user.username, role: user.role, permissions: user.permissions })
     }
 
     return { ok: true, user: { id: user.id, name: user.name, username: user.username, role: user.role } }
@@ -114,7 +146,7 @@ export function AuthProvider({ children }) {
     if (user.passwordHash !== hashPassword(password)) {
       return { ok: false, error: "Mot de passe incorrect" }
     }
-    setCurrentUser({ id: user.id, name: user.name, username: user.username, role: user.role })
+    setCurrentUser({ id: user.id, name: user.name, username: user.username, role: user.role, permissions: user.permissions })
     return { ok: true }
   }, [users])
 
@@ -131,8 +163,7 @@ export function AuthProvider({ children }) {
     if (currentUser?.id === userId) {
       setCurrentUser(prev => ({
         ...prev,
-        name: updates.name || prev.name,
-        role: updates.role || prev.role,
+        ...updates,
       }))
     }
   }, [currentUser?.id])
@@ -159,11 +190,14 @@ export function AuthProvider({ children }) {
   const changeUserRole = useCallback((userId, newRole) => {
     const validRoles = ['admin', 'moderator']
     if (!validRoles.includes(newRole)) return { ok: false, error: "Rôle invalide" }
+    const defaultPerms = newRole === 'admin'
+      ? Object.fromEntries(ALL_PERMISSIONS.map(p => [p, true]))
+      : { ...DEFAULT_MODERATOR_PERMISSIONS }
     setUsers(prev => prev.map(u =>
-      u.id === userId ? { ...u, role: newRole } : u
+      u.id === userId ? { ...u, role: newRole, permissions: defaultPerms } : u
     ))
     if (currentUser?.id === userId) {
-      setCurrentUser(prev => ({ ...prev, role: newRole }))
+      setCurrentUser(prev => ({ ...prev, role: newRole, permissions: defaultPerms }))
     }
     return { ok: true }
   }, [currentUser?.id])
@@ -171,11 +205,26 @@ export function AuthProvider({ children }) {
   const isAdmin = currentUser?.role === 'admin'
   const isAuthenticated = Boolean(currentUser)
 
+  const hasPermission = useCallback((permission) => {
+    if (isAdmin) return true
+    return currentUser?.permissions?.[permission] ?? false
+  }, [isAdmin, currentUser?.permissions])
+
+  const updatePermissions = useCallback((userId, permissions) => {
+    setUsers(prev => prev.map(u =>
+      u.id === userId ? { ...u, permissions } : u
+    ))
+    if (currentUser?.id === userId) {
+      setCurrentUser(prev => ({ ...prev, permissions }))
+    }
+  }, [currentUser?.id])
+
   const value = {
     currentUser,
     isAuthenticated,
     isAdmin,
     users,
+    hasPermission,
     register,
     login,
     logout,
@@ -183,6 +232,7 @@ export function AuthProvider({ children }) {
     removeUser,
     resetPassword,
     changeUserRole,
+    updatePermissions,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

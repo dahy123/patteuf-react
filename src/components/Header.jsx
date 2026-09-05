@@ -7,17 +7,17 @@ import {
 } from 'lucide-react'
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/stock', label: 'Stock', icon: Package },
-  { to: '/vente', label: 'Vente', icon: ShoppingCart },
-  { to: '/clients', label: 'Clients', icon: Users },
-  { to: '/cagnotte', label: 'Cagnotte', icon: Wallet },
-  { to: '/marketing', label: 'Marketing', icon: Megaphone },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
+  { to: '/stock', label: 'Stock', icon: Package, permission: 'stock' },
+  { to: '/vente', label: 'Vente', icon: ShoppingCart, permission: 'vente' },
+  { to: '/clients', label: 'Clients', icon: Users, permission: 'clients' },
+  { to: '/cagnotte', label: 'Cagnotte', icon: Wallet, permission: 'cagnotte' },
+  { to: '/marketing', label: 'Marketing', icon: Megaphone, permission: 'marketing' },
 ]
 
 export default function Header() {
   const { syncStatus, isOnline, forceSync } = useApp()
-  const { currentUser, logout, isAdmin } = useAuth()
+  const { currentUser, logout, isAdmin, hasPermission } = useAuth()
 
   const syncIcon = {
     idle: <Cloud className="w-3.5 h-3.5 text-white/40" />,
@@ -33,9 +33,10 @@ export default function Header() {
     error: 'Erreur',
   }[syncStatus] || 'Hors-ligne'
 
-  const allNavItems = isAdmin
-    ? [...navItems, { to: '/users', label: 'Users', icon: UserCog }]
-    : navItems
+  const visibleNavItems = navItems.filter(item => hasPermission(item.permission))
+  const allNavItems = isAdmin && hasPermission('users')
+    ? [...visibleNavItems, { to: '/users', label: 'Users', icon: UserCog, permission: 'users' }]
+    : visibleNavItems
 
   return (
     <header className="sticky top-0 z-40">

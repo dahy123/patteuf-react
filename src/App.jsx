@@ -20,8 +20,13 @@ function AuthPages() {
     : <Register onSwitchToLogin={() => setPage('login')} />
 }
 
+function ProtectedRoute({ permission, children }) {
+  const { hasPermission } = useAuth()
+  return hasPermission(permission) ? children : <Navigate to="/" replace />
+}
+
 function AppRoutes() {
-  const { isAuthenticated, isAdmin } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   if (!isAuthenticated) {
     return (
@@ -38,13 +43,13 @@ function AppRoutes() {
         <Header />
         <main className="max-w-2xl mx-auto pb-8">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/stock" element={<Stock />} />
-            <Route path="/vente" element={<Sale />} />
-            <Route path="/clients" element={<Clients />} />
-            <Route path="/cagnotte" element={<Cagnotte />} />
-            <Route path="/marketing" element={<Marketing />} />
-            <Route path="/users" element={isAdmin ? <Users /> : <Navigate to="/" replace />} />
+            <Route path="/" element={<ProtectedRoute permission="dashboard"><Dashboard /></ProtectedRoute>} />
+            <Route path="/stock" element={<ProtectedRoute permission="stock"><Stock /></ProtectedRoute>} />
+            <Route path="/vente" element={<ProtectedRoute permission="vente"><Sale /></ProtectedRoute>} />
+            <Route path="/clients" element={<ProtectedRoute permission="clients"><Clients /></ProtectedRoute>} />
+            <Route path="/cagnotte" element={<ProtectedRoute permission="cagnotte"><Cagnotte /></ProtectedRoute>} />
+            <Route path="/marketing" element={<ProtectedRoute permission="marketing"><Marketing /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute permission="users"><Users /></ProtectedRoute>} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
