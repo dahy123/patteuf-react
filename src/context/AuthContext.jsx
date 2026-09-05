@@ -17,7 +17,7 @@ function hashPassword(password) {
 }
 
 // All available permission keys
-export const ALL_PERMISSIONS = ['dashboard', 'stock', 'vente', 'clients', 'cagnotte', 'marketing', 'users']
+export const ALL_PERMISSIONS = ['dashboard', 'stock', 'vente', 'clients', 'cagnotte', 'marketing', 'users', 'produits']
 
 // Default permissions for moderators (all true by default)
 const DEFAULT_MODERATOR_PERMISSIONS = Object.fromEntries(

@@ -1,17 +1,15 @@
 import { useApp } from '../context/AppContext'
 import { formatAr, CASHBACK_AMOUNT, PARRAIN_CASHBACK } from '../utils/helpers'
-import { products } from '../data/products'
 import { Gift, Users, ShoppingCart, Sparkles, Trophy, ChevronRight, Zap, TrendingUp, HelpCircle, Award } from 'lucide-react'
 
 export default function Marketing() {
-  const { cagnottes, getStats } = useApp()
+  const { cagnottes, getStats, products } = useApp()
   const stats = getStats()
   const topCagnottes = [...cagnottes].sort((a, b) => b.balance - a.balance).slice(0, 10)
 
   // Get pack prices from products
-  const pack1 = products.find(p => p.id === 'pack-1')
-  const pack2 = products.find(p => p.id === 'pack-2')
-  const packPrices = [pack1?.price, pack2?.price].filter(Boolean)
+  const packs = products.filter(p => p.type === 'pack')
+  const packPrices = packs.map(p => p.price).filter(Boolean)
   const minPackPrice = packPrices.length > 0 ? Math.min(...packPrices) : 2600
 
   const steps = [

@@ -1,16 +1,17 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { generateId } from '../utils/helpers'
-import { products as initialProducts, PARRAIN_CASHBACK } from '../data/products'
+import { products as defaultProducts, PARRAIN_CASHBACK } from '../data/products'
 import { isSupabaseConfigured } from '../utils/supabase'
 import { syncWithSupabase, pushToSupabase } from '../utils/supabaseSync'
 
 const AppContext = createContext(null)
 
 const STORAGE_KEY = 'patteuf_data'
+const PRODUCTS_KEY = 'patteuf_products'
 
-function loadInitialStock() {
+function loadInitialStock(products) {
   const stockMap = {}
-  initialProducts.forEach(p => { stockMap[p.id] = p.stock })
+  products.forEach(p => { stockMap[p.id] = p.stock })
   return stockMap
 }
 
@@ -22,17 +23,32 @@ function loadSavedData() {
   return null
 }
 
+function loadSavedProducts() {
+  try {
+    const saved = localStorage.getItem(PRODUCTS_KEY)
+    if (saved) return JSON.parse(saved)
+  } catch { /* ignore */ }
+  return null
+}
+
 export function AppProvider({ children }) {
   const saved = loadSavedData()
+  const savedProducts = loadSavedProducts()
 
-  const [stock, setStock] = useState(() => saved?.stock || loadInitialStock())
+  const [products, setProducts] = useState(() => savedProducts || [...defaultProducts])
+  const [stock, setStock] = useState(() => saved?.stock || loadInitialStock(savedProducts || defaultProducts))
   const [sales, setSales] = useState(() => saved?.sales || [])
   const [cagnottes, setCagnottes] = useState(() => saved?.cagnottes || [])
   const [clients, setClients] = useState(() => saved?.clients || [])
-  const [syncStatus, setSyncStatus] = useState('idle') // idle | syncing | synced | error
+  const [syncStatus, setSyncStatus] = useState('idle')
   const [isOnline, setIsOnline] = useState(navigator.onLine)
 
-  // ── Persist to localStorage on every change ──
+  // ── Persist products ──
+  useEffect(() => {
+    localStorage.setItem(PRODUCTS_KEY, JSON.stringify(products))
+  }, [products])
+
+  // ── Persist other data ──
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ stock, sales, cagnottes, clients }))
   }, [stock, sales, cagnottes, clients])
@@ -49,15 +65,14 @@ export function AppProvider({ children }) {
     }
   }, [])
 
-  // ── Auto-sync on mount (pull from Supabase) ──
+  // ── Auto-sync on mount ──
   useEffect(() => {
     if (!isSupabaseConfigured()) return
-
     const doInitialSync = async () => {
       setSyncStatus('syncing')
       const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
       if (result.synced && result.data) {
-        setStock(result.data.stock || loadInitialStock())
+        setStock(result.data.stock || loadInitialStock(products))
         setSales(result.data.sales || [])
         setCagnottes(result.data.cagnottes || [])
         setClients(result.data.clients || [])
@@ -68,24 +83,19 @@ export function AppProvider({ children }) {
     }
     doInitialSync()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // Run once on mount
+  }, [])
 
-  // ── Debounced push to Supabase on data changes ──
+  // ── Debounced push to Supabase ──
   const pushTimerRef = useRef(null)
   useEffect(() => {
     if (!isSupabaseConfigured() || !isOnline) return
-
-    // Debounce: wait 2s after last change before pushing
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
     pushTimerRef.current = setTimeout(async () => {
       setSyncStatus('syncing')
       const result = await pushToSupabase({ stock, sales, cagnottes, clients })
       setSyncStatus(result.ok ? 'synced' : 'error')
     }, 2000)
-
-    return () => {
-      if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
-    }
+    return () => { if (pushTimerRef.current) clearTimeout(pushTimerRef.current) }
   }, [stock, sales, cagnottes, clients, isOnline])
 
   // ── Manual sync trigger ──
@@ -94,7 +104,7 @@ export function AppProvider({ children }) {
     setSyncStatus('syncing')
     const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
     if (result.synced && result.data) {
-      setStock(result.data.stock || loadInitialStock())
+      setStock(result.data.stock || loadInitialStock(products))
       setSales(result.data.sales || [])
       setCagnottes(result.data.cagnottes || [])
       setClients(result.data.clients || [])
@@ -103,7 +113,49 @@ export function AppProvider({ children }) {
       setSyncStatus('error')
     }
     return result
-  }, [stock, sales, cagnottes, clients])
+  }, [stock, sales, cagnottes, clients, products])
+
+  // ── Products CRUD ──
+  const addProduct = useCallback(({ name, price, type, cashback, parrainBonus, stock: initialStock }) => {
+    const product = {
+      id: generateId(),
+      name: name.trim(),
+      price: Number(price) || 0,
+      type: type || 'simple',
+      cashback: type === 'pack' ? (Number(cashback) || 0) : 0,
+      parrainBonus: type === 'pack' ? (Number(parrainBonus) || 0) : 0,
+      stock: Number(initialStock) || 0,
+    }
+    setProducts(prev => [...prev, product])
+    setStock(prev => ({ ...prev, [product.id]: product.stock }))
+    return product
+  }, [])
+
+  const updateProduct = useCallback((productId, updates) => {
+    setProducts(prev => prev.map(p => {
+      if (p.id !== productId) return p
+      const updated = { ...p, ...updates }
+      // Reset cashback/parrainBonus if switched to simple
+      if (updates.type === 'simple') {
+        updated.cashback = 0
+        updated.parrainBonus = 0
+      }
+      return updated
+    }))
+    // Sync stock if initial stock was updated
+    if (updates.stock !== undefined) {
+      setStock(prev => ({ ...prev, [productId]: Math.max(0, Number(updates.stock) || 0) }))
+    }
+  }, [])
+
+  const removeProduct = useCallback((productId) => {
+    setProducts(prev => prev.filter(p => p.id !== productId))
+    setStock(prev => {
+      const updated = { ...prev }
+      delete updated[productId]
+      return updated
+    })
+  }, [])
 
   // ── Clients CRUD ──
   const addClient = useCallback(({ name, phone, address }) => {
@@ -138,13 +190,10 @@ export function AppProvider({ children }) {
     const q = query.toLowerCase().trim()
     if (!q) return clients
     return clients.filter(c =>
-      c.name.toLowerCase().includes(q) ||
-      c.phone.includes(q) ||
-      c.address.toLowerCase().includes(q)
+      c.name.toLowerCase().includes(q) || c.phone.includes(q) || c.address.toLowerCase().includes(q)
     )
   }, [clients])
 
-  // Update client purchase stats
   const updateClientStats = useCallback((clientId, saleTotal) => {
     setClients(prev => prev.map(c =>
       c.id === clientId
@@ -155,16 +204,16 @@ export function AppProvider({ children }) {
 
   // Get product by ID
   const getProduct = useCallback((id) => {
-    return initialProducts.find(p => p.id === id)
-  }, [])
+    return products.find(p => p.id === id)
+  }, [products])
 
   // Get all products with current stock
   const getProductsWithStock = useCallback(() => {
-    return initialProducts.map(p => ({
+    return products.map(p => ({
       ...p,
       currentStock: stock[p.id] ?? p.stock,
     }))
-  }, [stock])
+  }, [products, stock])
 
   // Update stock for a product
   const updateStock = useCallback((productId, newQty) => {
@@ -177,11 +226,9 @@ export function AppProvider({ children }) {
   // Process a sale
   const processSale = useCallback(({ items, buyerName, buyerPhone, parrainRefCode, clientId }) => {
     const total = items.reduce((sum, item) => sum + item.price * item.qty, 0)
-
-    // Determine cashback: only packs generate cashback
     const hasPack = items.some(i => i.type === 'pack')
     const totalCashback = hasPack ? items.reduce((sum, i) => {
-      const prod = initialProducts.find(p => p.id === i.id)
+      const prod = products.find(p => p.id === i.id)
       return sum + (prod?.cashback || 0) * i.qty
     }, 0) : 0
 
@@ -189,11 +236,7 @@ export function AppProvider({ children }) {
       id: generateId(),
       date: new Date().toISOString(),
       items: items.map(i => ({
-        id: i.id,
-        name: i.name,
-        price: i.price,
-        qty: i.qty,
-        type: i.type,
+        id: i.id, name: i.name, price: i.price, qty: i.qty, type: i.type,
       })),
       total,
       buyerName: buyerName || 'Anonyme',
@@ -214,10 +257,8 @@ export function AppProvider({ children }) {
       return updated
     })
 
-    // Add sale to history
     setSales(prev => [sale, ...prev])
 
-    // Update client stats if linked
     if (clientId) {
       setClients(prev => prev.map(c =>
         c.id === clientId
@@ -226,41 +267,26 @@ export function AppProvider({ children }) {
       ))
     }
 
-    // Update cagnottes (only for packs)
     if (hasPack) {
       setCagnottes(prev => {
         let updated = [...prev]
         const buyerRef = sale.refCode
-
-        // Buyer cashback
         const buyerIdx = updated.findIndex(c => c.refCode === buyerRef)
         if (buyerIdx >= 0) {
           updated[buyerIdx] = {
             ...updated[buyerIdx],
             balance: updated[buyerIdx].balance + totalCashback,
             cashbacks: [...updated[buyerIdx].cashbacks, {
-              amount: totalCashback,
-              date: sale.date,
-              type: 'purchase',
-              saleId: sale.id,
+              amount: totalCashback, date: sale.date, type: 'purchase', saleId: sale.id,
             }],
           }
         } else {
           updated.push({
-            refCode: buyerRef,
-            buyerName: sale.buyerName,
-            buyerPhone: sale.buyerPhone,
+            refCode: buyerRef, buyerName: sale.buyerName, buyerPhone: sale.buyerPhone,
             balance: totalCashback,
-            cashbacks: [{
-              amount: totalCashback,
-              date: sale.date,
-              type: 'purchase',
-              saleId: sale.id,
-            }],
+            cashbacks: [{ amount: totalCashback, date: sale.date, type: 'purchase', saleId: sale.id }],
           })
         }
-
-        // Parrain bonus
         if (parrainRefCode) {
           const parrainIdx = updated.findIndex(c => c.refCode === parrainRefCode)
           if (parrainIdx >= 0) {
@@ -268,22 +294,18 @@ export function AppProvider({ children }) {
               ...updated[parrainIdx],
               balance: updated[parrainIdx].balance + PARRAIN_CASHBACK,
               cashbacks: [...updated[parrainIdx].cashbacks, {
-                amount: PARRAIN_CASHBACK,
-                date: sale.date,
-                type: 'parrainage',
-                saleId: sale.id,
-                from: sale.buyerName,
+                amount: PARRAIN_CASHBACK, date: sale.date, type: 'parrainage',
+                saleId: sale.id, from: sale.buyerName,
               }],
             }
           }
         }
-
         return updated
       })
     }
 
     return sale
-  }, [])
+  }, [products])
 
   // Stats
   const getStats = useCallback(() => {
@@ -293,33 +315,34 @@ export function AppProvider({ children }) {
     const totalCashbackDistributed = cagnottes.reduce((sum, c) => {
       return sum + c.cashbacks.reduce((s, cb) => s + cb.amount, 0)
     }, 0)
-
-    // Low stock products
-    const lowStockProducts = initialProducts
+    const lowStockProducts = products
       .filter(p => (stock[p.id] ?? p.stock) <= 10)
       .map(p => ({ ...p, currentStock: stock[p.id] ?? p.stock }))
 
     return {
-      totalStock,
-      totalSales,
-      totalRevenue,
+      totalStock, totalSales, totalRevenue,
       totalCashback: totalCashbackDistributed,
       lowStockProducts,
       totalCagnottes: cagnottes.length,
       totalClients: clients.length,
+      totalProducts: products.length,
     }
-  }, [stock, sales, cagnottes, clients])
+  }, [stock, sales, cagnottes, clients, products])
 
   const value = {
-    products: initialProducts,
+    products,
     stock,
     sales,
     cagnottes,
     clients,
-    // Sync status
+    // Sync
     syncStatus,
     isOnline,
     forceSync,
+    // Products CRUD
+    addProduct,
+    updateProduct,
+    removeProduct,
     // Client CRUD
     addClient,
     updateClient,

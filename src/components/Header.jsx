@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
 import {
-  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, Users,
+  LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, Users, Boxes,
   Cloud, CloudOff, RefreshCw, Check, LogOut, Shield, UserCog,
 } from 'lucide-react'
 
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, permission: 'dashboard' },
   { to: '/stock', label: 'Stock', icon: Package, permission: 'stock' },
   { to: '/vente', label: 'Vente', icon: ShoppingCart, permission: 'vente' },
+  { to: '/produits', label: 'Produits', icon: Boxes, permission: 'produits' },
   { to: '/clients', label: 'Clients', icon: Users, permission: 'clients' },
   { to: '/cagnotte', label: 'Cagnotte', icon: Wallet, permission: 'cagnotte' },
   { to: '/marketing', label: 'Marketing', icon: Megaphone, permission: 'marketing' },

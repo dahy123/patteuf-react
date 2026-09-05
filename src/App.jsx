@@ -10,6 +10,7 @@ import Cagnotte from './pages/Cagnotte'
 import Clients from './pages/Clients'
 import Marketing from './pages/Marketing'
 import Users from './pages/Users'
+import Products from './pages/Products'
 import Login from './pages/Login'
 import Register from './pages/Register'
 
@@ -49,6 +50,7 @@ function AppRoutes() {
             <Route path="/clients" element={<ProtectedRoute permission="clients"><Clients /></ProtectedRoute>} />
             <Route path="/cagnotte" element={<ProtectedRoute permission="cagnotte"><Cagnotte /></ProtectedRoute>} />
             <Route path="/marketing" element={<ProtectedRoute permission="marketing"><Marketing /></ProtectedRoute>} />
+            <Route path="/produits" element={<ProtectedRoute permission="produits"><Products /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute permission="users"><Users /></ProtectedRoute>} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
