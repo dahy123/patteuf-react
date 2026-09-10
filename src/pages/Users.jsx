@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { useActionHistory, ACTION_TYPES } from '../context/ActionHistoryContext'
+import PageHistory from '../components/PageHistory'
+import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Users, Plus, Shield, User, Key, Trash2, X, Check,
   Search, ChevronDown, Crown, Eye, EyeOff, Lock,
@@ -20,6 +23,7 @@ const PERMISSION_META = {
 
 export default function UsersPage() {
   const { users, currentUser, register, removeUser, resetPassword, changeUserRole, updatePermissions } = useAuth()
+  const { logAction } = useActionHistory()
   const [showForm, setShowForm] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [form, setForm] = useState({ name: '', username: '', password: '', role: 'moderator' })
@@ -27,6 +31,8 @@ export default function UsersPage() {
   const [showPassword, setShowPassword] = useState(false)
   // Permissions panel
   const [permUserId, setPermUserId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [alertMsg, setAlertMsg] = useState(null)
 
   // Reset password state
   const [resetId, setResetId] = useState(null)
@@ -46,6 +52,10 @@ export default function UsersPage() {
     setFormError('')
     const result = register(form)
     if (result.ok) {
+      logAction(ACTION_TYPES.USER_CREATED, {
+        userName: form.name,
+        userId: users.find(u => u.username === form.username)?.id || 'nouveau',
+      }, currentUser?.name || currentUser?.username)
       setForm({ name: '', username: '', password: '', role: 'moderator' })
       setShowForm(false)
     } else {
@@ -54,26 +64,50 @@ export default function UsersPage() {
   }
 
   const handleDelete = (user) => {
-    if (window.confirm(`Supprimer le compte de "${user.name}" ?`)) {
-      const result = removeUser(user.id)
-      if (!result.ok) alert(result.error)
+    setDeleteTarget(user)
+  }
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    const result = removeUser(deleteTarget.id)
+    if (result.ok) {
+      logAction(ACTION_TYPES.USER_DELETED, {
+        userName: deleteTarget.name,
+        userId: deleteTarget.id,
+      }, currentUser?.name || currentUser?.username)
+    } else {
+      setAlertMsg(result.error)
     }
+    setDeleteTarget(null)
   }
 
   const handleRoleChange = (user, newRole) => {
     const result = changeUserRole(user.id, newRole)
-    if (!result.ok) alert(result.error)
+    if (result.ok) {
+      logAction(ACTION_TYPES.USER_ROLE_CHANGED, {
+        userName: user.name,
+        userId: user.id,
+        oldRole: user.role,
+        newRole,
+      }, currentUser?.name || currentUser?.username)
+    } else {
+      setAlertMsg(result.error)
+    }
   }
 
   const handleResetPassword = (userId) => {
     if (!newPassword) return
     const result = resetPassword(userId, newPassword)
     if (result.ok) {
+      logAction(ACTION_TYPES.USER_UPDATED, {
+        action: 'password_reset',
+        userId,
+      }, currentUser?.name || currentUser?.username)
       setResetId(null)
       setNewPassword('')
       setShowResetPw(false)
     } else {
-      alert(result.error)
+      setAlertMsg(result.error)
     }
   }
 
@@ -85,6 +119,12 @@ export default function UsersPage() {
     if (!user || user.role === 'admin') return
     const updated = { ...user.permissions, [perm]: !user.permissions?.[perm] }
     updatePermissions(userId, updated)
+    logAction(ACTION_TYPES.USER_UPDATED, {
+      action: 'permission_changed',
+      userId,
+      permission: perm,
+      enabled: updated[perm],
+    }, currentUser?.name || currentUser?.username)
   }
 
   return (
@@ -314,6 +354,30 @@ export default function UsersPage() {
           })
         )}
       </div>
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Supprimer l'utilisateur ?"
+        message={`Le compte de "${deleteTarget?.name}" sera définitivement supprimé.`}
+        confirmLabel="Supprimer"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* Alert dialog */}
+      <ConfirmDialog
+        open={!!alertMsg}
+        title="Erreur"
+        message={alertMsg}
+        confirmLabel="OK"
+        variant="warning"
+        onConfirm={() => setAlertMsg(null)}
+        onCancel={() => setAlertMsg(null)}
+      />
+
+      {/* History */}
+      <PageHistory category="user" label="Historique utilisateurs" />
     </div>
   )
 }

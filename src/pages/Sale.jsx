@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import { useActionHistory, ACTION_TYPES } from '../context/ActionHistoryContext'
+import { useAuth } from '../context/AuthContext'
 import { formatAr } from '../utils/helpers'
 import { PARRAIN_CASHBACK } from '../data/products'
+import PageHistory from '../components/PageHistory'
 import {
   Plus, Minus, X, Check, User, Phone, MapPin,
   Gift, ChevronDown, ChevronUp, History, Sparkles, Tag, PartyPopper,
@@ -17,7 +20,9 @@ const productIcons = {
 }
 
 export default function Sale() {
-  const { getProductsWithStock, processSale, sales, clients, addClient, searchClients } = useApp()
+  const { getProductsWithStock, processSale, sales, clients, addClient, searchClients, checkParrainRefCode } = useApp()
+  const { logAction } = useActionHistory()
+  const { currentUser } = useAuth()
   const products = getProductsWithStock()
   const [items, setItems] = useState([])
   const [showSuccess, setShowSuccess] = useState(false)
@@ -99,6 +104,13 @@ export default function Sale() {
       buyerPhone: buyerPhone.trim(),
       clientId: selectedClientId || '',
     })
+    logAction(ACTION_TYPES.SALE_COMPLETED, {
+      buyerName: sale.buyerName,
+      saleTotal: sale.total,
+      items: sale.items.map(i => ({ name: i.name, qty: i.qty })),
+      hasPack: sale.hasPack,
+      clientId: sale.clientId || null,
+    }, currentUser?.name || currentUser?.username)
     setLastSale(sale)
     setShowSuccess(true)
     setItems([])
@@ -151,7 +163,7 @@ export default function Sale() {
                   {lastSale.parrainRefCode && (
                     <div className="flex items-center gap-2 text-violet-600">
                       <Sparkles className="w-4 h-4" />
-                      <span className="text-xs font-medium">Parrain reçoit {formatAr(PARRAIN_CASHBACK)} de bonus</span>
+                      <span className="text-xs font-medium">Parrain <span className="font-mono">{lastSale.parrainRefCode}</span> reçoit {formatAr(PARRAIN_CASHBACK)} de bonus</span>
                     </div>
                   )}
                 </div>
@@ -422,7 +434,7 @@ export default function Sale() {
         )}
 
         {/* Parrainage auto */}
-        {cartHasPack && selectedClient?.parrainRefCode && (
+        {cartHasPack && selectedClient?.parrainRefCode && checkParrainRefCode(selectedClient.parrainRefCode) && (
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3.5">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-amber-600" />
@@ -432,9 +444,9 @@ export default function Sale() {
             </div>
           </div>
         )}
-        {cartHasPack && !selectedClient?.parrainRefCode && (
+        {cartHasPack && (!selectedClient?.parrainRefCode || !checkParrainRefCode(selectedClient.parrainRefCode)) && (
           <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
-            <p className="text-xs text-slate-400 italic">Pas de parrain associé à ce client. Ajoutez un parrain dans la gestion clients.</p>
+            <p className="text-xs text-slate-400 italic">Aucun parrain</p>
           </div>
         )}
         {!cartHasPack && items.length > 0 && (
@@ -516,6 +528,9 @@ export default function Sale() {
           )}
         </div>
       )}
+
+      {/* Action History */}
+      <PageHistory category="sale" label="Historique des ventes" />
     </div>
   )
 }

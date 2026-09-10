@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import { ActionHistoryProvider } from './context/ActionHistoryContext'
 import Header from './components/Header'
 import Dashboard from './pages/Dashboard'
 import Stock from './pages/Stock'
@@ -11,6 +12,7 @@ import Clients from './pages/Clients'
 import Marketing from './pages/Marketing'
 import Users from './pages/Users'
 import Products from './pages/Products'
+import History from './pages/History'
 import Login from './pages/Login'
 import Register from './pages/Register'
 
@@ -39,10 +41,11 @@ function AppRoutes() {
   }
 
   return (
-    <AppProvider>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
-        <Header />
-        <main className="max-w-2xl mx-auto pb-8">
+    <ActionHistoryProvider>
+      <AppProvider>
+        <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100">
+          <Header />
+          <main className="max-w-2xl mx-auto pb-8">
           <Routes>
             <Route path="/" element={<ProtectedRoute permission="dashboard"><Dashboard /></ProtectedRoute>} />
             <Route path="/stock" element={<ProtectedRoute permission="stock"><Stock /></ProtectedRoute>} />
@@ -52,12 +55,14 @@ function AppRoutes() {
             <Route path="/marketing" element={<ProtectedRoute permission="marketing"><Marketing /></ProtectedRoute>} />
             <Route path="/produits" element={<ProtectedRoute permission="produits"><Products /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute permission="users"><Users /></ProtectedRoute>} />
+            <Route path="/historique" element={<History />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
     </AppProvider>
+    </ActionHistoryProvider>
   )
 }
 

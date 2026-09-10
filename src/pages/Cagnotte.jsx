@@ -1,10 +1,15 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import { useActionHistory, ACTION_TYPES } from '../context/ActionHistoryContext'
+import { useAuth } from '../context/AuthContext'
 import { formatAr } from '../utils/helpers'
+import PageHistory from '../components/PageHistory'
 import { Search, Wallet, Gift, Users, TrendingUp, ArrowRight, Crown, Award } from 'lucide-react'
 
 export default function Cagnotte() {
   const { cagnottes } = useApp()
+  const { logAction } = useActionHistory()
+  const { currentUser } = useAuth()
   const [searchCode, setSearchCode] = useState('')
   const [found, setFound] = useState(null)
   const [error, setError] = useState('')
@@ -14,8 +19,15 @@ export default function Cagnotte() {
     const code = searchCode.trim().toUpperCase()
     if (!code) { setError('Veuillez entrer un code'); return }
     const cagnotte = cagnottes.find(c => c.refCode === code)
-    if (cagnotte) setFound(cagnotte)
-    else setError('Aucune cagnotte trouvée pour ce code')
+    if (cagnotte) {
+      setFound(cagnotte)
+      logAction(ACTION_TYPES.CAGNOTTE_WITHDRAWAL, {
+        clientName: cagnotte.buyerName || 'Anonyme',
+        refCode: cagnotte.refCode,
+        amount: cagnotte.balance,
+      }, currentUser?.name || currentUser?.username)
+    } else {      setError('Aucune cagnotte trouvée pour ce code')
+    }
   }
 
   return (
@@ -136,6 +148,9 @@ export default function Cagnotte() {
           <a href="/vente" className="btn btn-primary mt-4 text-sm inline-flex">Commencer une vente <ArrowRight className="w-4 h-4" /></a>
         </div>
       )}
+
+      {/* History */}
+      <PageHistory category="cagnotte" label="Historique cagnottes" />
     </div>
   )
 }

@@ -1,12 +1,18 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
+import { useActionHistory, ACTION_TYPES } from '../context/ActionHistoryContext'
 import { formatAr } from '../utils/helpers'
+import PageHistory from '../components/PageHistory'
+import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Package, Plus, Pencil, Trash2, X, Check, Tag, Gift, Search,
 } from 'lucide-react'
 
 export default function Products() {
   const { products, addProduct, updateProduct, removeProduct } = useApp()
+  const { currentUser, isAdmin } = useAuth()
+  const { logAction } = useActionHistory()
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -14,6 +20,7 @@ export default function Products() {
     name: '', price: '', type: 'simple', cashback: '', parrainBonus: '', stock: '',
   })
   const [formError, setFormError] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const filteredProducts = searchQuery
     ? products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -54,32 +61,43 @@ export default function Products() {
       return
     }
 
+    const productData = {
+      name: form.name.trim(),
+      price: Number(form.price),
+      type: form.type,
+      cashback: form.type === 'pack' ? Number(form.cashback) || 0 : 0,
+      parrainBonus: form.type === 'pack' ? Number(form.parrainBonus) || 0 : 0,
+      stock: Number(form.stock) || 0,
+    }
+
     if (editId) {
-      updateProduct(editId, {
-        name: form.name.trim(),
-        price: Number(form.price),
-        type: form.type,
-        cashback: form.type === 'pack' ? Number(form.cashback) || 0 : 0,
-        parrainBonus: form.type === 'pack' ? Number(form.parrainBonus) || 0 : 0,
-        stock: Number(form.stock) || 0,
-      })
+      updateProduct(editId, productData)
+      logAction(ACTION_TYPES.PRODUCT_UPDATED, {
+        productName: productData.name,
+        productId: editId,
+      }, currentUser?.name || currentUser?.username)
     } else {
-      addProduct({
-        name: form.name.trim(),
-        price: Number(form.price),
-        type: form.type,
-        cashback: form.type === 'pack' ? Number(form.cashback) || 0 : 0,
-        parrainBonus: form.type === 'pack' ? Number(form.parrainBonus) || 0 : 0,
-        stock: Number(form.stock) || 0,
-      })
+      const created = addProduct(productData)
+      logAction(ACTION_TYPES.PRODUCT_CREATED, {
+        productName: productData.name,
+        productId: created?.id,
+      }, currentUser?.name || currentUser?.username)
     }
     resetForm()
   }
 
   const handleDelete = (product) => {
-    if (window.confirm(`Supprimer le produit "${product.name}" ?`)) {
-      removeProduct(product.id)
-    }
+    setDeleteTarget(product)
+  }
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    removeProduct(deleteTarget.id)
+    logAction(ACTION_TYPES.PRODUCT_DELETED, {
+      productName: deleteTarget.name,
+      productId: deleteTarget.id,
+    }, currentUser?.name || currentUser?.username)
+    setDeleteTarget(null)
   }
 
   const ProductCard = ({ product }) => {
@@ -109,14 +127,16 @@ export default function Products() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => startEdit(product)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition">
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-            <button onClick={() => handleDelete(product)} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition">
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {isAdmin && (
+            <div className="flex items-center gap-1">
+              <button onClick={() => startEdit(product)} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-brand-600 transition">
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+              <button onClick={() => handleDelete(product)} className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition">
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
     )
@@ -130,9 +150,11 @@ export default function Products() {
           <h1 className="text-xl font-bold text-slate-800">Produits</h1>
           <p className="text-slate-500 text-sm mt-0.5">{products.length} produit{products.length > 1 ? 's' : ''}</p>
         </div>
-        <button onClick={() => { resetForm(); setShowForm(true) }} className="btn btn-primary">
-          <Plus className="w-4 h-4" /><span className="hidden sm:inline">Ajouter</span>
-        </button>
+        {isAdmin && (
+          <button onClick={() => { resetForm(); setShowForm(true) }} className="btn btn-primary">
+            <Plus className="w-4 h-4" /><span className="hidden sm:inline">Ajouter</span>
+          </button>
+        )}
       </div>
 
       {/* Create / Edit Form */}
@@ -249,6 +271,19 @@ export default function Products() {
           <p className="text-slate-500 font-medium">{searchQuery ? 'Aucun produit trouve' : 'Aucun produit'}</p>
         </div>
       )}
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="Supprimer le produit ?"
+        message={`Le produit "${deleteTarget?.name}" sera définitivement supprimé.`}
+        confirmLabel="Supprimer"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
+
+      {/* History */}
+      <PageHistory category="product" label="Historique produits" />
     </div>
   )
 }

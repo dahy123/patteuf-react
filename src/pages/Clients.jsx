@@ -1,19 +1,26 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import { useActionHistory, ACTION_TYPES } from '../context/ActionHistoryContext'
+import { useAuth } from '../context/AuthContext'
 import { formatAr } from '../utils/helpers'
+import PageHistory from '../components/PageHistory'
+import ConfirmDialog from '../components/ConfirmDialog'
 import {
   Users, Plus, Search, Phone, MapPin, Edit3, Trash2, X, Check,
   TrendingUp, User, Copy, Gift,
 } from 'lucide-react'
 
 export default function Clients() {
-  const { clients, sales, addClient, updateClient, removeClient, searchClients } = useApp()
+  const { clients, sales, addClient, updateClient, removeClient, searchClients, checkParrainRefCode } = useApp()
+  const { logAction } = useActionHistory()
+  const { currentUser } = useAuth()
   const [searchQuery, setSearchQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState({ name: '', phone: '', address: '', parrainRefCode: '' })
   const [selectedClient, setSelectedClient] = useState(null)
   const [copiedCode, setCopiedCode] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const filteredClients = searchQuery ? searchClients(searchQuery) : clients
 
@@ -33,14 +40,25 @@ export default function Clients() {
     if (!form.name.trim()) return
 
     if (editId) {
+      const oldClient = clients.find(c => c.id === editId)
       updateClient(editId, {
         name: form.name.trim(),
         phone: form.phone.trim(),
         address: form.address.trim(),
         parrainRefCode: form.parrainRefCode.trim().toUpperCase(),
       })
+      logAction(ACTION_TYPES.CLIENT_UPDATED, {
+        clientName: form.name.trim(),
+        clientId: editId,
+        oldName: oldClient?.name,
+      }, currentUser?.name || currentUser?.username)
     } else {
-      addClient(form)
+      const newClient = addClient(form)
+      alert(`Client "${newClient.name}" ajouté avec succès !`)
+      logAction(ACTION_TYPES.CLIENT_CREATED, {
+        clientName: form.name.trim(),
+        clientId: newClient.id,
+      }, currentUser?.name || currentUser?.username)
     }
     resetForm()
   }
@@ -52,10 +70,18 @@ export default function Clients() {
   }
 
   const handleDelete = (client) => {
-    if (window.confirm(`Supprimer le client "${client.name}" ?`)) {
-      removeClient(client.id)
-      if (selectedClient?.id === client.id) setSelectedClient(null)
-    }
+    setDeleteTarget(client)
+  }
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return
+    removeClient(deleteTarget.id)
+    logAction(ACTION_TYPES.CLIENT_DELETED, {
+      clientName: deleteTarget.name,
+      clientId: deleteTarget.id,
+    }, currentUser?.name || currentUser?.username)
+    if (selectedClient?.id === deleteTarget.id) setSelectedClient(null)
+    setDeleteTarget(null)
   }
 
   const handleViewClient = (client) => {
@@ -148,10 +174,22 @@ export default function Clients() {
                 placeholder="Ex: OLD1-PAT"
                 value={form.parrainRefCode}
                 onChange={e => setForm({ ...form, parrainRefCode: e.target.value.toUpperCase() })}
-                className="input font-mono uppercase tracking-wider"
+                className={`input font-mono uppercase tracking-wider ${form.parrainRefCode && !checkParrainRefCode(form.parrainRefCode) ? 'border-amber-300 bg-amber-50' : ''}`}
                 maxLength={12}
               />
-              <p className="text-[11px] text-slate-400 mt-1">Laisser vide si pas de parrain</p>
+              {form.parrainRefCode ? (
+                checkParrainRefCode(form.parrainRefCode) ? (
+                  <p className="text-[11px] text-emerald-600 mt-1 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Code parrain trouvé en base
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Code non trouvé 
+                  </p>
+                )
+              ) : (
+                <p className="text-[11px] text-slate-400 mt-1">Laisser vide si pas de parrain</p>
+              )}
             </div>
             <div className="flex gap-2 pt-1">
               <button type="submit" className="btn btn-success flex-1">
@@ -294,6 +332,15 @@ export default function Clients() {
               <Trash2 className="w-3.5 h-3.5" /> Supprimer
             </button>
           </div>
+
+          <ConfirmDialog
+            open={!!deleteTarget}
+            title="Supprimer le client ?"
+            message={`Le client "${deleteTarget?.name}" sera définitivement supprimé.`}
+            confirmLabel="Supprimer"
+            onConfirm={confirmDelete}
+            onCancel={() => setDeleteTarget(null)}
+          />
         </div>
       )}
 
@@ -354,12 +401,14 @@ export default function Clients() {
                     <p className="text-sm font-bold text-brand-700 tabular-nums">{formatAr(client.totalSpent)}</p>
                     <p className="text-[10px] text-slate-400">{clientSalesCount} achat{clientSalesCount > 1 ? 's' : ''}</p>
                   </div>
-                </div>
-              </div>
-            )
-          })
-        )}
+                </div>            </div>
+          )
+        })
+      )}
       </div>
+
+      {/* History */}
+      <PageHistory category="client" label="Historique clients" />
     </div>
   )
 }

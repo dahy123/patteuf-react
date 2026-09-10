@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { generateId } from '../utils/helpers'
 import { products as defaultProducts, PARRAIN_CASHBACK } from '../data/products'
 import { isSupabaseConfigured } from '../utils/supabase'
+
+// Code parrain de l'admin — reçoit les bonus quand le code saisi n'existe pas en base
+export const ADMIN_REF_CODE = 'OLD1-PAT'
 import { syncWithSupabase, pushToSupabase } from '../utils/supabaseSync'
 
 const AppContext = createContext(null)
@@ -234,6 +237,12 @@ export function AppProvider({ children }) {
     ))
   }, [])
 
+  // Check if a referral code exists in the clients database
+  const checkParrainRefCode = useCallback((refCode) => {
+    if (!refCode) return false
+    return clients.some(c => c.refCode === refCode.trim().toUpperCase())
+  }, [clients])
+
   // Get product by ID
   const getProduct = useCallback((id) => {
     return products.find(p => p.id === id)
@@ -268,9 +277,18 @@ export function AppProvider({ children }) {
     const buyerClient = clientId ? clients.find(c => c.id === clientId) : null
     const buyerRefCode = buyerClient?.refCode || generateId().toUpperCase().slice(0, 8)
     // Automatic parrainage: use the client's parrainRefCode (but not self-referral)
-    const autoParrainRefCode = (buyerClient?.parrainRefCode && buyerClient.parrainRefCode !== buyerRefCode)
+    let autoParrainRefCode = (buyerClient?.parrainRefCode && buyerClient.parrainRefCode !== buyerRefCode)
       ? buyerClient.parrainRefCode
       : ''
+
+    // Vérifier si le code parrain existe dans la base clients
+    // Si le code n'existe pas → le bonus va vers le code parrain de l'admin
+    if (autoParrainRefCode) {
+      const parrainExists = clients.some(c => c.refCode === autoParrainRefCode)
+      if (!parrainExists) {
+        autoParrainRefCode = ADMIN_REF_CODE
+      }
+    }
 
     const sale = {
       id: generateId(),
@@ -390,6 +408,7 @@ export function AppProvider({ children }) {
     getClient,
     searchClients,
     updateClientStats,
+    checkParrainRefCode,
     // Products & Stock
     getProduct,
     getProductsWithStock,

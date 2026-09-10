@@ -1,6 +1,7 @@
 import { useApp } from '../context/AppContext'
 import { formatAr, CASHBACK_AMOUNT, PARRAIN_CASHBACK } from '../utils/helpers'
-import { Gift, Users, ShoppingCart, Sparkles, Trophy, ChevronRight, Zap, TrendingUp, HelpCircle, Award } from 'lucide-react'
+import PageHistory from '../components/PageHistory'
+import { Gift, Users, ShoppingCart, Sparkles, Trophy, ChevronRight, Zap, TrendingUp, HelpCircle, Award, Clock } from 'lucide-react'
 
 export default function Marketing() {
   const { cagnottes, getStats, products } = useApp()

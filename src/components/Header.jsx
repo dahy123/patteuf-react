@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
 import {
   LayoutDashboard, Package, ShoppingCart, Wallet, Megaphone, Users, Boxes,
-  Cloud, CloudOff, RefreshCw, Check, LogOut, Shield, UserCog,
+  Cloud, CloudOff, RefreshCw, Check, LogOut, Shield, UserCog, Clock,
 } from 'lucide-react'
 
 const navItems = [
@@ -36,7 +36,7 @@ export default function Header() {
 
   const visibleNavItems = navItems.filter(item => hasPermission(item.permission))
   const allNavItems = isAdmin && hasPermission('users')
-    ? [...visibleNavItems, { to: '/users', label: 'Users', icon: UserCog, permission: 'users' }]
+    ? [...visibleNavItems, { to: '/users', label: 'Users', icon: UserCog, permission: 'users' }, { to: '/historique', label: 'Historique', icon: Clock, permission: 'users' }]
     : visibleNavItems
 
   return (

@@ -1,16 +1,32 @@
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
+import { useActionHistory, ACTION_TYPES } from '../context/ActionHistoryContext'
+import { useAuth } from '../context/AuthContext'
 import { formatAr } from '../utils/helpers'
-import { Package, Pencil, X, Check, ArrowUpCircle, Tag, Gift } from 'lucide-react'
+import PageHistory from '../components/PageHistory'
+import {
+  Package, Pencil, X, Check, ArrowUpCircle, Tag, Gift
+} from 'lucide-react'
 
 export default function Stock() {
   const { getProductsWithStock, updateStock } = useApp()
+  const { logAction } = useActionHistory()
+  const { currentUser } = useAuth()
   const products = getProductsWithStock()
   const [editId, setEditId] = useState(null)
   const [editQty, setEditQty] = useState('')
 
   const handleSaveQty = (productId) => {
-    updateStock(productId, parseInt(editQty) || 0)
+    const product = products.find(p => p.id === productId)
+    const oldQty = product?.currentStock ?? 0
+    const newQty = parseInt(editQty) || 0
+    updateStock(productId, newQty)
+    logAction(ACTION_TYPES.STOCK_UPDATED, {
+      productName: product?.name || 'Inconnu',
+      productId,
+      oldValue: oldQty,
+      newValue: newQty,
+    }, currentUser?.name || currentUser?.username)
     setEditId(null)
     setEditQty('')
   }
@@ -102,8 +118,17 @@ export default function Stock() {
               ) : (
                 <div className="flex gap-2">
                   {[{ val: 10, label: '+10' }, { val: 50, label: '+50' }, { val: 100, label: '+100' }].map(btn => (
-                    <button key={btn.val} onClick={() => updateStock(product.id, product.currentStock + btn.val)}
-                      className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-slate-50 hover:bg-brand-50 text-slate-600 hover:text-brand-700 text-xs font-semibold transition border border-slate-100 hover:border-brand-200">
+                    <button key={btn.val} onClick={() => {
+                      const oldQty = product.currentStock
+                      const newQty = oldQty + btn.val
+                      updateStock(product.id, newQty)
+                      logAction(ACTION_TYPES.STOCK_UPDATED, {
+                        productName: product.name,
+                        productId: product.id,
+                        oldValue: oldQty,
+                        newValue: newQty,
+                      }, currentUser?.name || currentUser?.username)
+                    }} className="flex-1 flex items-center justify-center gap-1 py-2 rounded-xl bg-slate-50 hover:bg-brand-50 text-slate-600 hover:text-brand-700 text-xs font-semibold transition border border-slate-100 hover:border-brand-200">
                       <ArrowUpCircle className="w-3.5 h-3.5" />{btn.label}
                     </button>
                   ))}
@@ -113,6 +138,9 @@ export default function Stock() {
           )
         })}
       </div>
+
+      {/* History */}
+      <PageHistory category="stock" label="Historique stocks" />
     </div>
   )
 }
