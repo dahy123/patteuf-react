@@ -50,13 +50,17 @@ async function pullHistoryFromSupabase() {
   try {
     const { data, error } = await sb
       .from('app_action_history')
-      .select('history')
+      .select('history, updated_at')
       .eq('singleton_id', 'main')
       .maybeSingle()
 
     if (error) throw error
 
-    return { ok: true, history: data?.history || [] }
+    return {
+      ok: true,
+      history: data?.history || [],
+      updatedAt: data?.updated_at || null,
+    }
   } catch (err) {
     console.error('[PATTEUF] Pull history Supabase error:', err)
     return { ok: false, reason: err.message }
@@ -116,7 +120,7 @@ export function ActionHistoryProvider({ children }) {
     saveHistory(history)
   }, [history])
 
-  // ── Pull from Supabase on mount ──
+  // ── Pull from Supabase on mount (DB is priority) ──
   useEffect(() => {
     if (!isSupabaseConfigured()) {
       setSyncStatus('idle')
@@ -129,11 +133,39 @@ export function ActionHistoryProvider({ children }) {
       initialPullDone.current = true
       if (result.ok) {
         const remote = result.history || []
+        const remoteTime = result.updatedAt || ''
+        const lastSync = localStorage.getItem(SYNC_KEY) || ''
+
         setHistory(prev => {
-          // Merge: keep the longer/newer array
-          if (remote.length > prev.length) {
-            return remote.slice(0, MAX_HISTORY_ITEMS)
+          const localHasData = prev.length > 0
+          const remoteHasData = remote.length > 0
+
+          // No remote data → keep local
+          if (!remoteHasData) return prev
+
+          // No local data → use remote
+          if (!localHasData) return remote.slice(0, MAX_HISTORY_ITEMS)
+
+          // Both have data → compare timestamps
+          if (remoteTime > lastSync) {
+            // Remote is newer → merge, keeping newest entries by id
+            const map = new Map()
+            for (const entry of remote) {
+              if (entry?.id) map.set(entry.id, entry)
+            }
+            for (const entry of prev) {
+              if (!entry?.id) continue
+              const existing = map.get(entry.id)
+              if (!existing) {
+                map.set(entry.id, entry)
+              } else if ((entry.timestamp || '') >= (existing.timestamp || '')) {
+                map.set(entry.id, entry)
+              }
+            }
+            return Array.from(map.values()).slice(0, MAX_HISTORY_ITEMS)
           }
+
+          // Local is newer or equal → keep local (will push later)
           return prev
         })
         setSyncStatus('synced')

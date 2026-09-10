@@ -126,16 +126,6 @@ export default function Dashboard() {
                   <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${pct}%` }} />
       </div>
 
-      {/* Recent Activity */}
-      <div className="space-y-3">
-        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-          <Clock className="w-4 h-4 text-slate-400" /> Activité récente
-        </h2>
-        <PageHistory category="sale" label="Ventes" maxItems={5} />
-        <PageHistory category="stock" label="Stocks" maxItems={3} />
-        <PageHistory category="product" label="Produits" maxItems={3} />
-        <PageHistory category="client" label="Clients" maxItems={3} />
-      </div>
     </div>
   )
 })}

@@ -83,13 +83,14 @@ export function AppProvider({ children }) {
     }
   }, [])
 
-  // ── Auto-sync on mount ──
+  // ── Auto-sync on mount (DB is priority) ──
   useEffect(() => {
     if (!isSupabaseConfigured()) return
     const doInitialSync = async () => {
       setSyncStatus('syncing')
       const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
       if (result.synced && result.data) {
+        // Apply merged data from DB
         setStock(result.data.stock || loadInitialStock(products))
         setSales(result.data.sales || [])
         setCagnottes(result.data.cagnottes || [])
@@ -103,10 +104,16 @@ export function AppProvider({ children }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Debounced push to Supabase ──
+  // ── Debounced push to Supabase (after initial sync is done) ──
   const pushTimerRef = useRef(null)
+  const initialSyncDone = useRef(false)
   useEffect(() => {
     if (!isSupabaseConfigured() || !isOnline) return
+    // Skip the very first render (initial sync handles that)
+    if (!initialSyncDone.current) {
+      initialSyncDone.current = true
+      return
+    }
     if (pushTimerRef.current) clearTimeout(pushTimerRef.current)
     pushTimerRef.current = setTimeout(async () => {
       setSyncStatus('syncing')
@@ -116,7 +123,7 @@ export function AppProvider({ children }) {
     return () => { if (pushTimerRef.current) clearTimeout(pushTimerRef.current) }
   }, [stock, sales, cagnottes, clients, isOnline])
 
-  // ── Manual sync trigger ──
+  // ── Manual sync trigger (full pull → merge → push) ──
   const forceSync = useCallback(async () => {
     if (!isSupabaseConfigured()) return { ok: false, reason: 'not_configured' }
     setSyncStatus('syncing')

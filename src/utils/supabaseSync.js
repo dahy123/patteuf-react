@@ -1,59 +1,73 @@
 import { getSupabase } from './supabase'
 
 // ──────────────────────────────────────────────
-// Sync helpers — localStorage ↔ Supabase
-// Works offline-first: localStorage is always
-// the source of truth; Supabase is a backup.
+// Sync helpers — Supabase ↔ localStorage
+// DB is the source of truth. On conflict we
+// compare `updated_at` timestamps and keep the
+// newest version per collection.
 // ──────────────────────────────────────────────
 
 const SYNC_KEY = 'patteuf_last_sync'
+const TABLES = ['app_stock', 'app_sales', 'app_cagnottes', 'app_clients']
+const DATA_KEYS = ['stock', 'sales', 'cagnottes', 'clients']
 
-// ── Push local data → Supabase ──
-export async function pushToSupabase(localData) {
+// ── Pull remote data WITH timestamps ──
+async function pullRemote() {
   const sb = getSupabase()
   if (!sb) return { ok: false, reason: 'not_configured' }
 
   try {
-    // Upsert each table as a single JSON row keyed by "singleton_id"
-    // This avoids complex row-level syncing for an offline-first MVP.
-    const payload = [
-      { singleton_id: 'main', stock: localData.stock, updated_at: new Date().toISOString() },
-    ]
-
-    // Upsert stock
-    const { error: stockErr } = await sb
-      .from('app_stock')
-      .upsert(payload, { onConflict: 'singleton_id' })
-    if (stockErr) throw stockErr
-
-    // Upsert sales array
-    const { error: salesErr } = await sb
-      .from('app_sales')
-      .upsert(
-        [{ singleton_id: 'main', sales: localData.sales, updated_at: new Date().toISOString() }],
-        { onConflict: 'singleton_id' }
+    const results = await Promise.all(
+      TABLES.map(t =>
+        sb.from(t).select('*').eq('singleton_id', 'main').maybeSingle()
       )
-    if (salesErr) throw salesErr
+    )
 
-    // Upsert cagnottes array
-    const { error: cagErr } = await sb
-      .from('app_cagnottes')
-      .upsert(
-        [{ singleton_id: 'main', cagnottes: localData.cagnottes, updated_at: new Date().toISOString() }],
-        { onConflict: 'singleton_id' }
-      )
-    if (cagErr) throw cagErr
+    for (const r of results) {
+      if (r.error) throw r.error
+    }
 
-    // Upsert clients array
-    const { error: cliErr } = await sb
-      .from('app_clients')
-      .upsert(
-        [{ singleton_id: 'main', clients: localData.clients, updated_at: new Date().toISOString() }],
-        { onConflict: 'singleton_id' }
-      )
-    if (cliErr) throw cliErr
+    const remote = {}
+    const remoteTimestamps = {}
 
-    localStorage.setItem(SYNC_KEY, new Date().toISOString())
+    TABLES.forEach((table, i) => {
+      const row = results[i].data
+      const key = DATA_KEYS[i]
+      remote[key] = row?.[key] ?? null
+      remoteTimestamps[key] = row?.updated_at || null
+    })
+
+    return { ok: true, data: remote, timestamps: remoteTimestamps }
+  } catch (err) {
+    console.error('[PATTEUF] Pull Supabase error:', err)
+    return { ok: false, reason: err.message }
+  }
+}
+
+// ── Push local data → Supabase ──
+async function pushRemote(localData) {
+  const sb = getSupabase()
+  if (!sb) return { ok: false, reason: 'not_configured' }
+
+  try {
+    const now = new Date().toISOString()
+
+    const upserts = TABLES.map((table, i) => {
+      const key = DATA_KEYS[i]
+      return sb
+        .from(table)
+        .upsert(
+          [{ singleton_id: 'main', [key]: localData[key], updated_at: now }],
+          { onConflict: 'singleton_id' }
+        )
+    })
+
+    const results = await Promise.all(upserts)
+    for (const r of results) {
+      if (r.error) throw r.error
+    }
+
+    localStorage.setItem(SYNC_KEY, now)
     return { ok: true }
   } catch (err) {
     console.error('[PATTEUF] Push Supabase error:', err)
@@ -61,95 +75,147 @@ export async function pushToSupabase(localData) {
   }
 }
 
-// ── Pull Supabase → local data ──
-export async function pullFromSupabase() {
-  const sb = getSupabase()
-  if (!sb) return { ok: false, reason: 'not_configured' }
+// ── Merge two arrays by `id`, keeping the newest entry ──
+function mergeArraysById(localArr = [], remoteArr = []) {
+  const map = new Map()
 
-  try {
-    const [stockRes, salesRes, cagRes, cliRes] = await Promise.all([
-      sb.from('app_stock').select('stock').eq('singleton_id', 'main').maybeSingle(),
-      sb.from('app_sales').select('sales').eq('singleton_id', 'main').maybeSingle(),
-      sb.from('app_cagnottes').select('cagnottes').eq('singleton_id', 'main').maybeSingle(),
-      sb.from('app_clients').select('clients').eq('singleton_id', 'main').maybeSingle(),
-    ])
-
-    if (stockRes.error) throw stockRes.error
-    if (salesRes.error) throw salesRes.error
-    if (cagRes.error) throw cagRes.error
-    if (cliRes.error) throw cliRes.error
-
-    const remoteData = {
-      stock: stockRes.data?.stock || null,
-      sales: salesRes.data?.sales || null,
-      cagnottes: cagRes.data?.cagnottes || null,
-      clients: cliRes.data?.clients || null,
-    }
-
-    return { ok: true, data: remoteData }
-  } catch (err) {
-    console.error('[PATTEUF] Pull Supabase error:', err)
-    return { ok: false, reason: err.message }
+  // Index remote first
+  for (const item of remoteArr) {
+    if (item?.id) map.set(item.id, item)
   }
+
+  // Overlay local — if local has an item not in remote, add it
+  // If both have the same id, keep whichever has the newer `date`/`createdAt`/`updatedAt`
+  for (const item of localArr) {
+    if (!item?.id) continue
+    const existing = map.get(item.id)
+    if (!existing) {
+      map.set(item.id, item)
+    } else {
+      // Compare by any timestamp field the item might have
+      const localTime = item.updatedAt || item.createdAt || item.date || ''
+      const remoteTime = existing.updatedAt || existing.createdAt || existing.date || ''
+      if (localTime >= remoteTime) {
+        map.set(item.id, item) // local is newer or equal
+      }
+      // else keep remote (it's newer)
+    }
+  }
+
+  return Array.from(map.values())
 }
 
-// ── Full sync: merge remote into local ──
-// Strategy: if remote is newer, use it; otherwise keep local.
+// ── Merge stock maps — keep higher value (conservative) ──
+function mergeStock(local = {}, remote = {}) {
+  const merged = { ...remote } // start from remote
+  for (const [key, val] of Object.entries(local)) {
+    if (!(key in merged) || val > merged[key]) {
+      merged[key] = val
+    }
+  }
+  return merged
+}
+
+// ── Full sync: pull → compare timestamps → merge → push ──
 export async function syncWithSupabase(localData) {
   const sb = getSupabase()
   if (!sb) return { synced: false, reason: 'not_configured' }
 
   try {
-    // 1. Pull remote
-    const pullResult = await pullFromSupabase()
+    // 1. Pull remote data + timestamps
+    const pullResult = await pullRemote()
     if (!pullResult.ok) return { synced: false, reason: pullResult.reason }
 
     const remote = pullResult.data
+    const remoteTs = pullResult.timestamps
     const lastSync = localStorage.getItem(SYNC_KEY)
 
-    // 2. Decide merge strategy
-    // If no local data exists yet (fresh install), use remote
-    const hasLocalData = localData.sales.length > 0 || Object.values(localData.stock).some(v => v > 0)
+    // 2. Check if remote has any data at all
+    const remoteHasData =
+      (remote.sales?.length || 0) > 0 ||
+      (remote.clients?.length || 0) > 0 ||
+      Object.values(remote.stock || {}).some(v => v > 0)
+
+    // 3. Check if local has any user data (not just defaults)
+    const localHasData =
+      (localData.sales?.length || 0) > 0 ||
+      (localData.clients?.length || 0) > 0
+
+    // ── Strategy ──
+    // Case A: No remote data → push local (first sync / fresh DB)
+    // Case B: No local data → use remote (fresh install on new device)
+    // Case C: Both have data → compare timestamps per table, merge newest
+    // Case D: Never synced before → prefer remote if it has data
 
     let merged = { ...localData }
 
-    if (!hasLocalData && remote.sales) {
-      // Fresh install — use remote data
+    if (!remoteHasData) {
+      // Case A: Remote is empty, push local
+      merged = { ...localData }
+    } else if (!localHasData && !lastSync) {
+      // Case D: Never synced, remote has data → use remote
       merged = {
-        stock: remote.stock || localData.stock,
+        stock: mergeStock(localData.stock, remote.stock),
         sales: remote.sales || [],
         cagnottes: remote.cagnottes || [],
         clients: remote.clients || [],
       }
-    } else if (remote.sales && lastSync) {
-      // Existing data — merge: keep the longer/newer arrays
-      if ((remote.sales?.length || 0) > localData.sales.length) {
-        merged.sales = remote.sales
+    } else if (!localHasData && remoteHasData) {
+      // Case B: Fresh install, remote has data → use remote
+      merged = {
+        stock: mergeStock(localData.stock, remote.stock),
+        sales: remote.sales || [],
+        cagnottes: remote.cagnottes || [],
+        clients: remote.clients || [],
       }
-      if ((remote.clients?.length || 0) > localData.clients.length) {
-        merged.clients = remote.clients
-      }
-      if ((remote.cagnottes?.length || 0) > localData.cagnottes.length) {
-        merged.cagnottes = remote.cagnottes
-      }
-      // For stock, keep the higher values (conservative merge)
-      if (remote.stock) {
-        const mergedStock = { ...localData.stock }
-        for (const [key, val] of Object.entries(remote.stock)) {
-          if (!(key in mergedStock) || val > mergedStock[key]) {
-            mergedStock[key] = val
+    } else {
+      // Case C: Both have data → merge by timestamp per table
+      const tablesToMerge = [
+        { key: 'sales', hasArray: true },
+        { key: 'clients', hasArray: true },
+        { key: 'cagnottes', hasArray: true },
+        { key: 'stock', hasArray: false },
+      ]
+
+      for (const { key, hasArray } of tablesToMerge) {
+        const localTime = lastSync || ''
+        const remoteTime = remoteTs[key] || ''
+
+        if (!remoteTime || remoteTime < localTime) {
+          // Local is newer → keep local (will push later)
+          continue
+        }
+
+        if (remoteTime > localTime) {
+          // Remote is newer
+          if (hasArray) {
+            merged[key] = mergeArraysById(localData[key] || [], remote[key] || [])
+          } else {
+            merged[key] = mergeStock(localData[key] || {}, remote[key] || {})
           }
         }
-        merged.stock = mergedStock
+        // If timestamps are equal, keep local (no change needed)
       }
     }
 
-    // 3. Push merged data back to Supabase
-    await pushToSupabase(merged)
+    // 4. Push merged data back to Supabase
+    await pushRemote(merged)
 
     return { synced: true, data: merged }
   } catch (err) {
     console.error('[PATTEUF] Sync error:', err)
     return { synced: false, reason: err.message }
   }
+}
+
+// ── Push-only (for debounced auto-sync) ──
+export async function pushToSupabase(localData) {
+  return pushRemote(localData)
+}
+
+// ── Pull-only ──
+export async function pullFromSupabase() {
+  const result = await pullRemote()
+  if (!result.ok) return { ok: false, reason: result.reason }
+  return { ok: true, data: result.data }
 }
