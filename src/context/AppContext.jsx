@@ -5,12 +5,31 @@ import { isSupabaseConfigured } from '../utils/supabase'
 
 // Code parrain de l'admin — reçoit les bonus quand le code saisi n'existe pas en base
 export const ADMIN_REF_CODE = 'OLD1-PAT'
-import { syncWithSupabase, pushToSupabase } from '../utils/supabaseSync'
+import { syncWithSupabase, pushToSupabase, nowIso } from '../utils/supabaseSync'
 
 const AppContext = createContext(null)
 
 const STORAGE_KEY = 'patteuf_data'
 const PRODUCTS_KEY = 'patteuf_products'
+
+// ── Shallow merge helpers used after a sync (apply result without losing
+//    in-flight local edits; sync result entries are newest-wins already) ──
+function mergeStockShallow(local = {}, synced = {}) {
+  const merged = { ...synced }
+  for (const [k, v] of Object.entries(local)) {
+    if (synced[k] === undefined) merged[k] = v
+  }
+  return merged
+}
+
+function mergeArrayStable(local = [], synced = []) {
+  // Sync already merged both sides by id (newest wins); keep synced order.
+  return synced.length >= local.length || synced.length > 0 ? synced : local
+}
+
+function mergeCagnottesStable(local = [], synced = []) {
+  return synced.length > 0 || local.length === 0 ? synced : local
+}
 
 function loadInitialStock(products) {
   const stockMap = {}
@@ -83,30 +102,35 @@ export function AppProvider({ children }) {
     }
   }, [])
 
+  // ── Shared sync runner: pull → merge (newest wins) → apply → push ──
+  const runSync = useCallback(async (current) => {
+    const result = await syncWithSupabase(current)
+    if (result.synced && result.data) {
+      // Apply merged data — always takes the most recent version per item
+      setStock(prev => mergeStockShallow(prev, result.data.stock))
+      setSales(prev => mergeArrayStable(prev, result.data.sales))
+      setCagnottes(prev => mergeCagnottesStable(prev, result.data.cagnottes))
+      setClients(prev => mergeArrayStable(prev, result.data.clients))
+      setSyncStatus('synced')
+    } else {
+      setSyncStatus(result.reason === 'not_configured' ? 'idle' : 'error')
+    }
+    return result
+  }, [])
+
   // ── Auto-sync on mount (DB is priority) ──
   useEffect(() => {
     if (!isSupabaseConfigured()) return
-    const doInitialSync = async () => {
-      setSyncStatus('syncing')
-      const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
-      if (result.synced && result.data) {
-        // Apply merged data from DB
-        setStock(result.data.stock || loadInitialStock(products))
-        setSales(result.data.sales || [])
-        setCagnottes(result.data.cagnottes || [])
-        setClients(result.data.clients || [])
-        setSyncStatus('synced')
-      } else {
-        setSyncStatus(result.reason === 'not_configured' ? 'idle' : 'error')
-      }
-    }
-    doInitialSync()
+    setSyncStatus('syncing')
+    runSync({ stock, sales, cagnottes, clients })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // ── Debounced push to Supabase (after initial sync is done) ──
+  // Local mutations are stamped with updatedAt/now, then pushed.
   const pushTimerRef = useRef(null)
   const initialSyncDone = useRef(false)
+  const syncInProgressRef = useRef(false)
   useEffect(() => {
     if (!isSupabaseConfigured() || !isOnline) return
     // Skip the very first render (initial sync handles that)
@@ -123,22 +147,31 @@ export function AppProvider({ children }) {
     return () => { if (pushTimerRef.current) clearTimeout(pushTimerRef.current) }
   }, [stock, sales, cagnottes, clients, isOnline])
 
+  // ── Periodic re-sync: detect changes made on OTHER devices ──
+  // Every 30s we pull + merge, so a sale/stock/client updated seconds or
+  // minutes ago elsewhere shows up here without a manual refresh.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    const interval = setInterval(() => {
+      if (!navigator.onLine) return
+      if (syncInProgressRef.current) return
+      syncInProgressRef.current = true
+      setSyncStatus('syncing')
+      runSync({ stock, sales, cagnottes, clients })
+        .catch(() => setSyncStatus('error'))
+        .finally(() => { syncInProgressRef.current = false })
+    }, 30000)
+    return () => clearInterval(interval)
+  }, [stock, sales, cagnottes, clients, runSync])
+
   // ── Manual sync trigger (full pull → merge → push) ──
   const forceSync = useCallback(async () => {
     if (!isSupabaseConfigured()) return { ok: false, reason: 'not_configured' }
     setSyncStatus('syncing')
-    const result = await syncWithSupabase({ stock, sales, cagnottes, clients })
-    if (result.synced && result.data) {
-      setStock(result.data.stock || loadInitialStock(products))
-      setSales(result.data.sales || [])
-      setCagnottes(result.data.cagnottes || [])
-      setClients(result.data.clients || [])
-      setSyncStatus('synced')
-    } else {
-      setSyncStatus('error')
-    }
+    const result = await runSync({ stock, sales, cagnottes, clients })
+    if (!result.synced) setSyncStatus('error')
     return result
-  }, [stock, sales, cagnottes, clients, products])
+  }, [stock, sales, cagnottes, clients, runSync])
 
   // ── Products CRUD ──
   const addProduct = useCallback(({ name, price, type, cashback, parrainBonus, stock: initialStock }) => {
@@ -207,6 +240,7 @@ export function AppProvider({ children }) {
         refCode,
         parrainRefCode: parrainRefCode?.trim().toUpperCase() || '',
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         totalPurchases: 0,
         totalSpent: 0,
       }
@@ -216,7 +250,7 @@ export function AppProvider({ children }) {
 
   const updateClient = useCallback((clientId, updates) => {
     setClients(prev => prev.map(c =>
-      c.id === clientId ? { ...c, ...updates } : c
+      c.id === clientId ? { ...c, ...updates, updatedAt: nowIso() } : c
     ))
   }, [])
 
@@ -239,7 +273,7 @@ export function AppProvider({ children }) {
   const updateClientStats = useCallback((clientId, saleTotal) => {
     setClients(prev => prev.map(c =>
       c.id === clientId
-        ? { ...c, totalPurchases: c.totalPurchases + 1, totalSpent: c.totalSpent + saleTotal }
+        ? { ...c, totalPurchases: c.totalPurchases + 1, totalSpent: c.totalSpent + saleTotal, updatedAt: nowIso() }
         : c
     ))
   }, [])
@@ -341,6 +375,7 @@ export function AppProvider({ children }) {
           updated[buyerIdx] = {
             ...updated[buyerIdx],
             balance: updated[buyerIdx].balance + totalCashback,
+            updatedAt: sale.date,
             cashbacks: [...updated[buyerIdx].cashbacks, {
               amount: totalCashback, date: sale.date, type: 'purchase', saleId: sale.id,
             }],
@@ -349,6 +384,7 @@ export function AppProvider({ children }) {
           updated.push({
             refCode: buyerRef, buyerName: sale.buyerName, buyerPhone: sale.buyerPhone,
             balance: totalCashback,
+            updatedAt: sale.date,
             cashbacks: [{ amount: totalCashback, date: sale.date, type: 'purchase', saleId: sale.id }],
           })
         }
@@ -358,6 +394,7 @@ export function AppProvider({ children }) {
             updated[parrainIdx] = {
               ...updated[parrainIdx],
               balance: updated[parrainIdx].balance + PARRAIN_CASHBACK,
+              updatedAt: sale.date,
               cashbacks: [...updated[parrainIdx].cashbacks, {
                 amount: PARRAIN_CASHBACK, date: sale.date, type: 'parrainage',
                 saleId: sale.id, from: sale.buyerName,

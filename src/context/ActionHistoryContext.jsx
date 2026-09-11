@@ -2,11 +2,44 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { generateId } from '../utils/helpers'
 import { getSupabase, isSupabaseConfigured } from '../utils/supabase'
 
+// Safely compare two timestamp strings (handles UTC, offset, bare ISO)
+function compareTimestamps(a, b) {
+  if (!a && !b) return 0
+  if (!a) return -1
+  if (!b) return 1
+  const ta = new Date(a).getTime()
+  const tb = new Date(b).getTime()
+  if (isNaN(ta) && isNaN(tb)) return 0
+  if (isNaN(ta)) return -1
+  if (isNaN(tb)) return 1
+  return ta - tb
+}
+
 const ActionHistoryContext = createContext(null)
 
 const HISTORY_KEY = 'patteuf_action_history'
 const SYNC_KEY = 'patteuf_history_last_sync'
 const MAX_HISTORY_ITEMS = 500
+
+// Extracted merge so mount-pull and periodic re-pull share the same logic
+function mergeHistories(local, remote) {
+  const map = new Map()
+  for (const entry of remote) {
+    if (entry?.id) map.set(entry.id, entry)
+  }
+  for (const entry of local) {
+    if (!entry?.id) continue
+    const existing = map.get(entry.id)
+    if (!existing) {
+      map.set(entry.id, entry)
+    } else if (compareTimestamps(entry.timestamp || '', existing.timestamp || '') >= 0) {
+      map.set(entry.id, entry)
+    }
+  }
+  return Array.from(map.values())
+    .sort((a, b) => compareTimestamps(b.timestamp || '', a.timestamp || ''))
+    .slice(0, MAX_HISTORY_ITEMS)
+}
 
 function loadHistory() {
   try {
@@ -133,8 +166,6 @@ export function ActionHistoryProvider({ children }) {
       initialPullDone.current = true
       if (result.ok) {
         const remote = result.history || []
-        const remoteTime = result.updatedAt || ''
-        const lastSync = localStorage.getItem(SYNC_KEY) || ''
 
         setHistory(prev => {
           const localHasData = prev.length > 0
@@ -146,27 +177,10 @@ export function ActionHistoryProvider({ children }) {
           // No local data → use remote
           if (!localHasData) return remote.slice(0, MAX_HISTORY_ITEMS)
 
-          // Both have data → compare timestamps
-          if (remoteTime > lastSync) {
-            // Remote is newer → merge, keeping newest entries by id
-            const map = new Map()
-            for (const entry of remote) {
-              if (entry?.id) map.set(entry.id, entry)
-            }
-            for (const entry of prev) {
-              if (!entry?.id) continue
-              const existing = map.get(entry.id)
-              if (!existing) {
-                map.set(entry.id, entry)
-              } else if ((entry.timestamp || '') >= (existing.timestamp || '')) {
-                map.set(entry.id, entry)
-              }
-            }
-            return Array.from(map.values()).slice(0, MAX_HISTORY_ITEMS)
-          }
-
-          // Local is newer or equal → keep local (will push later)
-          return prev
+          // Both have data → ALWAYS merge per-entry, newest wins (ms precision).
+          // Each entry carries its own `timestamp`, so no coarse last-sync gate:
+          // an action logged 2 seconds ago on another device shows up here.
+          return mergeHistories(prev, remote)
         })
         setSyncStatus('synced')
       } else {
@@ -175,6 +189,25 @@ export function ActionHistoryProvider({ children }) {
     }
     pull()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Periodic re-pull: actions logged seconds/minutes ago on ANOTHER
+  //    device appear here without a manual refresh (newest-wins merge). ──
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    const interval = setInterval(async () => {
+      if (!navigator.onLine) return
+      const result = await pullHistoryFromSupabase()
+      if (!result.ok) return
+      const remote = result.history || []
+      if (remote.length === 0) return
+      setHistory(prev => {
+        const localHasData = prev.length > 0
+        if (!localHasData) return remote.slice(0, MAX_HISTORY_ITEMS)
+        return mergeHistories(prev, remote)
+      })
+    }, 30000)
+    return () => clearInterval(interval)
   }, [])
 
   // ── Debounced push to Supabase (skip until first pull is done) ──

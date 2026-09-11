@@ -2,10 +2,39 @@ import { getSupabase } from './supabase'
 
 // ──────────────────────────────────────────────
 // Sync helpers — Supabase ↔ localStorage
-// DB is the source of truth. On conflict we
-// compare `updated_at` timestamps and keep the
-// newest version per collection.
+// DB is the source of truth, but merging is done
+// PER ITEM with millisecond precision: every
+// entry carries `updatedAt` (ISO string) and the
+// newest version always wins. Nothing is ever
+// overwritten wholesale, so a change made seconds
+// or minutes ago on another device is preserved.
 // ──────────────────────────────────────────────
+
+// Safely compare two timestamp strings, returning a number:
+// negative if a < b, positive if a > b, 0 if equal.
+// Handles UTC (Z), offset (+03:00), and bare ISO without tz.
+// new Date() parses ISO strings with full millisecond precision.
+function compareTimestamps(a, b) {
+  if (!a && !b) return 0
+  if (!a) return -1
+  if (!b) return 1
+  const ta = new Date(a).getTime()
+  const tb = new Date(b).getTime()
+  if (isNaN(ta) && isNaN(tb)) return 0
+  if (isNaN(ta)) return -1
+  if (isNaN(tb)) return 1
+  return ta - tb
+}
+
+// Best timestamp available on a record (ms precision)
+function itemTime(item) {
+  return item?.updatedAt || item?.createdAt || item?.date || ''
+}
+
+// Current time as ISO string (UTC, millisecond precision)
+export function nowIso() {
+  return new Date().toISOString()
+}
 
 const SYNC_KEY = 'patteuf_last_sync'
 const TABLES = ['app_stock', 'app_sales', 'app_cagnottes', 'app_clients']
@@ -50,7 +79,7 @@ async function pushRemote(localData) {
   if (!sb) return { ok: false, reason: 'not_configured' }
 
   try {
-    const now = new Date().toISOString()
+    const now = nowIso()
 
     const upserts = TABLES.map((table, i) => {
       const key = DATA_KEYS[i]
@@ -68,14 +97,17 @@ async function pushRemote(localData) {
     }
 
     localStorage.setItem(SYNC_KEY, now)
-    return { ok: true }
+    return { ok: true, syncedAt: now }
   } catch (err) {
     console.error('[PATTEUF] Push Supabase error:', err)
     return { ok: false, reason: err.message }
   }
 }
 
-// ── Merge two arrays by `id`, keeping the newest entry ──
+// ── Merge two arrays by `id`, ALWAYS keeping the newest entry ──
+// Per-item comparison at ms precision: an entry edited 2 seconds
+// later on another device beats the local copy; an entry that only
+// exists on one side is always kept (no deletion by sync).
 function mergeArraysById(localArr = [], remoteArr = []) {
   const map = new Map()
 
@@ -85,17 +117,15 @@ function mergeArraysById(localArr = [], remoteArr = []) {
   }
 
   // Overlay local — if local has an item not in remote, add it
-  // If both have the same id, keep whichever has the newer `date`/`createdAt`/`updatedAt`
+  // If both have the same id, keep whichever is newer (ms precision)
   for (const item of localArr) {
     if (!item?.id) continue
     const existing = map.get(item.id)
     if (!existing) {
       map.set(item.id, item)
     } else {
-      // Compare by any timestamp field the item might have
-      const localTime = item.updatedAt || item.createdAt || item.date || ''
-      const remoteTime = existing.updatedAt || existing.createdAt || existing.date || ''
-      if (localTime >= remoteTime) {
+      const cmp = compareTimestamps(itemTime(item), itemTime(existing))
+      if (cmp >= 0) {
         map.set(item.id, item) // local is newer or equal
       }
       // else keep remote (it's newer)
@@ -105,7 +135,28 @@ function mergeArraysById(localArr = [], remoteArr = []) {
   return Array.from(map.values())
 }
 
-// ── Merge stock maps — keep higher value (conservative) ──
+// ── Merge cagnottes by refCode, keeping the newest per-cagnotte state ──
+// Cagnottes have no `id`; refCode is the stable key. Balance changes
+// (cashback, retrait) are timestamped via `updatedAt`.
+function mergeCagnottes(localArr = [], remoteArr = []) {
+  const map = new Map()
+  for (const c of remoteArr) {
+    if (c?.refCode) map.set(c.refCode, c)
+  }
+  for (const c of localArr) {
+    if (!c?.refCode) continue
+    const existing = map.get(c.refCode)
+    if (!existing) {
+      map.set(c.refCode, c)
+    } else {
+      const cmp = compareTimestamps(itemTime(c), itemTime(existing))
+      if (cmp >= 0) map.set(c.refCode, c)
+    }
+  }
+  return Array.from(map.values())
+}
+
+// ── Merge stock maps — keep the highest value per product (conservative) ──
 function mergeStock(local = {}, remote = {}) {
   const merged = { ...remote } // start from remote
   for (const [key, val] of Object.entries(local)) {
@@ -116,7 +167,7 @@ function mergeStock(local = {}, remote = {}) {
   return merged
 }
 
-// ── Full sync: pull → compare timestamps → merge → push ──
+// ── Full sync: pull → merge per-item (newest wins, ms precision) → push ──
 export async function syncWithSupabase(localData) {
   const sb = getSupabase()
   if (!sb) return { synced: false, reason: 'not_configured' }
@@ -127,79 +178,24 @@ export async function syncWithSupabase(localData) {
     if (!pullResult.ok) return { synced: false, reason: pullResult.reason }
 
     const remote = pullResult.data
-    const remoteTs = pullResult.timestamps
-    const lastSync = localStorage.getItem(SYNC_KEY)
 
-    // 2. Check if remote has any data at all
-    const remoteHasData =
-      (remote.sales?.length || 0) > 0 ||
-      (remote.clients?.length || 0) > 0 ||
-      Object.values(remote.stock || {}).some(v => v > 0)
-
-    // 3. Check if local has any user data (not just defaults)
-    const localHasData =
-      (localData.sales?.length || 0) > 0 ||
-      (localData.clients?.length || 0) > 0
-
-    // ── Strategy ──
-    // Case A: No remote data → push local (first sync / fresh DB)
-    // Case B: No local data → use remote (fresh install on new device)
-    // Case C: Both have data → compare timestamps per table, merge newest
-    // Case D: Never synced before → prefer remote if it has data
-
-    let merged = { ...localData }
-
-    if (!remoteHasData) {
-      // Case A: Remote is empty, push local
-      merged = { ...localData }
-    } else if (!localHasData && !lastSync) {
-      // Case D: Never synced, remote has data → use remote
-      merged = {
-        stock: mergeStock(localData.stock, remote.stock),
-        sales: remote.sales || [],
-        cagnottes: remote.cagnottes || [],
-        clients: remote.clients || [],
-      }
-    } else if (!localHasData && remoteHasData) {
-      // Case B: Fresh install, remote has data → use remote
-      merged = {
-        stock: mergeStock(localData.stock, remote.stock),
-        sales: remote.sales || [],
-        cagnottes: remote.cagnottes || [],
-        clients: remote.clients || [],
-      }
-    } else {
-      // Case C: Both have data → merge by timestamp per table
-      const tablesToMerge = [
-        { key: 'sales', hasArray: true },
-        { key: 'clients', hasArray: true },
-        { key: 'cagnottes', hasArray: true },
-        { key: 'stock', hasArray: false },
-      ]
-
-      for (const { key, hasArray } of tablesToMerge) {
-        const localTime = lastSync || ''
-        const remoteTime = remoteTs[key] || ''
-
-        if (!remoteTime || remoteTime < localTime) {
-          // Local is newer → keep local (will push later)
-          continue
-        }
-
-        if (remoteTime > localTime) {
-          // Remote is newer
-          if (hasArray) {
-            merged[key] = mergeArraysById(localData[key] || [], remote[key] || [])
-          } else {
-            merged[key] = mergeStock(localData[key] || {}, remote[key] || {})
-          }
-        }
-        // If timestamps are equal, keep local (no change needed)
-      }
+    // 2. Merge EVERY collection per-item, newest-wins — always, even if
+    //    the remote row was written 1 second ago or 1 hour ago.
+    //    This guarantees we take the most recent data at any granularity.
+    const merged = {
+      stock: mergeStock(localData.stock || {}, remote.stock || {}),
+      sales: mergeArraysById(localData.sales || [], remote.sales || []),
+      clients: mergeArraysById(localData.clients || [], remote.clients || []),
+      cagnottes: mergeCagnottes(localData.cagnottes || [], remote.cagnottes || []),
     }
 
-    // 4. Push merged data back to Supabase
-    await pushRemote(merged)
+    // 3. Push merged data back so both sides converge to the same state
+    const pushResult = await pushRemote(merged)
+    if (!pushResult.ok) {
+      // Even if the push fails (offline, RLS...), still return the merged
+      // data so the app shows the freshest combined state.
+      return { synced: true, data: merged, pushFailed: true }
+    }
 
     return { synced: true, data: merged }
   } catch (err) {

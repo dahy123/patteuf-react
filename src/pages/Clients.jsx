@@ -407,8 +407,6 @@ export default function Clients() {
       )}
       </div>
 
-      {/* History */}
-      <PageHistory category="client" label="Historique clients" />
-    </div>
+    </div>  
   )
 }

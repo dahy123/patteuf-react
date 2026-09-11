@@ -139,8 +139,6 @@ export default function Stock() {
         })}
       </div>
 
-      {/* History */}
-      <PageHistory category="stock" label="Historique stocks" />
     </div>
   )
 }

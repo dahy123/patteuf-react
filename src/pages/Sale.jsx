@@ -529,8 +529,6 @@ export default function Sale() {
         </div>
       )}
 
-      {/* Action History */}
-      <PageHistory category="sale" label="Historique des ventes" />
     </div>
   )
 }

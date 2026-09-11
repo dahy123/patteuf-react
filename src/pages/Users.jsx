@@ -376,8 +376,6 @@ export default function UsersPage() {
         onCancel={() => setAlertMsg(null)}
       />
 
-      {/* History */}
-      <PageHistory category="user" label="Historique utilisateurs" />
     </div>
   )
 }

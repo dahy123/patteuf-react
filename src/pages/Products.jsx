@@ -282,8 +282,6 @@ export default function Products() {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* History */}
-      <PageHistory category="product" label="Historique produits" />
     </div>
   )
 }

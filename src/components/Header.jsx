@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useAuth } from '../context/AuthContext'
@@ -15,6 +16,21 @@ const navItems = [
   { to: '/cagnotte', label: 'Cagnotte', icon: Wallet, permission: 'cagnotte' },
   { to: '/marketing', label: 'Marketing', icon: Megaphone, permission: 'marketing' },
 ]
+
+function LiveClock() {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  return (
+    <span className="font-mono tabular-nums">
+      {now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+    </span>
+  )
+}
 
 export default function Header() {
   const { syncStatus, isOnline, forceSync } = useApp()
@@ -60,6 +76,12 @@ export default function Header() {
             </div>
           </NavLink>
           <div className="flex items-center gap-2">
+            {/* Horloge */}
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/10 text-white/70 text-[11px]">
+              <Clock className="w-3 h-3 text-white/50" />
+              <LiveClock />
+            </div>
+
             {/* User info */}
             <div className="hidden sm:flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-white/10 text-white/70 text-[11px]">
               {isAdmin && <Shield className="w-3 h-3 text-white/50" />}
